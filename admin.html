@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - คอร์สเรียนออนไลน์</title>
+    <link rel="stylesheet" href="admin-style.css">
+</head>
+<body>
+
+<div class="admin-container">
+    <header class="admin-header">
+        <h1>🛠️ ระบบจัดการหลังบ้าน</h1>
+        <p>จัดการคอร์สเรียนและบทเรียนของคุณได้ที่นี่</p>
+    </header>
+
+    <div class="admin-grid">
+        <aside class="admin-card">
+            <div class="card-header">
+                <h3>1. จัดการคอร์สเรียน</h3>
+            </div>
+            <div class="card-body">
+                <div class="input-group">
+                    <label for="new-course-name">เพิ่มคอร์สใหม่</label>
+                    <input type="text" id="new-course-name" placeholder="เช่น สอบเข้า ม.1">
+                    <button onclick="addCourse()" class="btn btn-blue">➕ เพิ่มคอร์ส</button>
+                </div>
+                
+                <div class="input-group" style="margin-top: 25px;">
+                    <label for="course-dropdown">คอร์สที่มีอยู่ (สำหรับลบ)</label>
+                    <div class="row-flex">
+                        <select id="course-dropdown">
+                            <option value="">-- กำลังโหลด... --</option>
+                        </select>
+                        <button onclick="deleteCourse()" class="btn btn-red">❌ ลบ</button>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <main class="admin-card">
+            <div class="card-header">
+                <h3>2. เพิ่มวิดีโอบทเรียน</h3>
+            </div>
+            <div class="card-body admin-form">
+                <div class="form-row">
+                    <div class="input-group">
+                        <label>คอร์สที่ต้องการเพิ่มคลิป</label>
+                        <select id="video-course-select">
+                            <option value="">-- เลือกคอร์ส --</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label>หัวข้อ/เรื่อง</label>
+                        <input type="text" id="topic-name" placeholder="เช่น เรื่องที่ 1: จำนวนนับ">
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label>ชื่อคลิปวิดีโอ</label>
+                    <input type="text" id="lesson-title" placeholder="เช่น บทนำพื้นฐาน">
+                </div>
+
+                <div class="form-row">
+                    <div class="input-group">
+                        <label>YouTube หรือ Vimeo ID</label>
+                        <input type="text" id="video-id" placeholder="รหัส 11 หลัก หรือ ตัวเลข">
+                    </div>
+                    <div class="input-group">
+                        <label>ลำดับคลิป</label>
+                        <input type="number" id="order-no" value="1">
+                    </div>
+                </div>
+
+                <button onclick="saveLesson()" class="btn btn-green btn-large">💾 บันทึกวิดีโอบทเรียน</button>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="admin.js"></script>
+</body>
+</html>
