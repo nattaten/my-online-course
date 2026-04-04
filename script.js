@@ -6,13 +6,19 @@ const _supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 const loginBtn = document.getElementById('login-btn');
 
 loginBtn.addEventListener('click', async () => {
-    // 1. ต้องดึงค่าจาก Element มาเก็บในตัวแปรก่อน "ห้ามสลับลำดับ"
-    const email = document.getElementById('email').value.trim();
-    const password = document.getElementById('password').value.trim();
+    // ดึงค่า Element มาก่อน
+    const emailEl = document.getElementById('email');
+    const passEl = document.getElementById('password');
     const errorMsg = document.getElementById('error-msg');
 
-    // 2. ค่อยสั่ง Console log (ตอนนี้ email มีค่าแล้ว จะไม่ Error)
-    console.log("กำลังพยายาม Login ด้วย:", email);
+    // ตรวจสอบว่ามีช่องกรอกไหม
+    if (!emailEl || !passEl) return;
+
+    const email = emailEl.value.trim();
+    const password = passEl.value.trim();
+
+    // ตอนนี้ใช้ email ได้แล้ว เพราะประกาศตัวแปรไปแล้วข้างบน
+    console.log("พยายามเข้าสู่ระบบ...");
 
     if (!email || !password) {
         alert("กรุณากรอกข้อมูลให้ครบ");
@@ -34,21 +40,19 @@ loginBtn.addEventListener('click', async () => {
             return;
         }
 
-        const myCourse = user.course_name; 
         const { data: lessons, error: lessonError } = await _supabaseClient
             .from('lessons')
             .select('*')
-            .eq('course_name', myCourse)
+            .eq('course_name', user.course_name)
             .order('order_no', { ascending: true });
 
         if (lessonError) {
-            errorMsg.innerText = "ดึงบทเรียนไม่ได้";
+            errorMsg.innerText = "ดึงข้อมูลล้มเหลว";
         } else {
             showVideoPage(user, lessons);
         }
-
     } catch (err) {
-        errorMsg.innerText = "เกิดข้อผิดพลาด: " + err.message;
+        errorMsg.innerText = "ข้อผิดพลาด: " + err.message;
     }
 });
 
@@ -59,84 +63,59 @@ function showVideoPage(userData, lessons) {
 
     const playerWrapper = document.getElementById('player-wrapper');
     if (!lessons || lessons.length === 0) {
-        playerWrapper.innerHTML = "<p>ไม่พบวิดีโอในบทเรียนนี้</p>";
+        playerWrapper.innerHTML = "<p>ไม่พบวิดีโอ</p>";
         return;
     }
 
     let playlistHTML = '';
     let currentTopic = "";
-
     lessons.forEach((item) => {
         if (item.topic_name && item.topic_name !== currentTopic) {
             currentTopic = item.topic_name;
-            playlistHTML += `<h3 style="margin: 25px 0 10px 5px; color: #0369a1; font-size: 18px;">📁 ${currentTopic}</h3>`;
+            playlistHTML += `<h3 style="margin:20px 0 10px; color:#0369a1;">📁 ${currentTopic}</h3>`;
         }
-        playlistHTML += `
-            <button class="lesson-btn" onclick="changeVideo('${item.vimeo_id}', '${item.pdf_url || ""}', this)">
-                <span style="margin-right: 10px;">▶️</span>
-                ${item.lesson_title}
-            </button>
-        `;
+        playlistHTML += `<button class="lesson-btn" onclick="changeVideo('${item.vimeo_id}', '${item.pdf_url || ""}', this)">▶️ ${item.lesson_title}</button>`;
     });
 
-    const firstId = lessons[0].vimeo_id;
-    const firstPdf = lessons[0].pdf_url || "";
-    let firstSrc = (isNaN(firstId) && firstId.length === 11) 
-        ? `https://www.youtube.com/embed/${firstId}` 
-        : `https://player.vimeo.com/video/${firstId}`;
+    const fId = lessons[0].vimeo_id;
+    const fPdf = lessons[0].pdf_url || "";
+    let fSrc = (isNaN(fId) && fId.length === 11) ? `https://www.youtube.com/embed/${fId}` : `https://player.vimeo.com/video/${fId}`;
 
     playerWrapper.innerHTML = `
         <div class="video-container" style="position:relative; padding-bottom:56.25%; height:0; overflow:hidden; border-radius:12px; background:#000;">
-            <iframe id="main-player" src="${firstSrc}" 
-            style="position:absolute; top:0; left:0; width:100%; height:100%;" 
-            frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>
+            <iframe id="main-player" src="${fSrc}" style="position:absolute; top:0; left:0; width:100%; height:100%;" frameborder="0" allowfullscreen></iframe>
         </div>
-        <div class="playlist" style="margin-top: 20px;">
-            ${playlistHTML}
-        </div>
-    `;
-
-    updatePdfButton(firstPdf);
+        <div class="playlist" style="margin-top:20px;">${playlistHTML}</div>`;
+    updatePdfButton(fPdf);
 }
 
 window.changeVideo = function(id, pdfUrl, btnElement) {
     const iframe = document.getElementById('main-player');
     document.querySelectorAll('.lesson-btn').forEach(btn => btn.classList.remove('active'));
     if(btnElement) btnElement.classList.add('active');
-
-    let videoSrc = (isNaN(id) && id.length === 11) 
-        ? `https://www.youtube.com/embed/${id}?autoplay=1` 
-        : `https://player.vimeo.com/video/${id}?autoplay=1`;
-    iframe.src = videoSrc;
-
+    iframe.src = (isNaN(id) && id.length === 11) ? `https://www.youtube.com/embed/${id}?autoplay=1` : `https://player.vimeo.com/video/${id}?autoplay=1`;
     updatePdfButton(pdfUrl);
 };
 
 function updatePdfButton(url) {
     const container = document.getElementById('pdf-container');
-    if (!container) return; // กันพังถ้าหา container ไม่เจอ
+    if (!container) return;
     container.innerHTML = ""; 
-
     if (url && url.trim() !== "" && url !== "null") {
         const links = url.split(',');
-        const groupDiv = document.createElement('div');
-        groupDiv.style.marginTop = "15px";
-
-        links.forEach((link, index) => {
-            const trimmedLink = link.trim();
-            if (trimmedLink && (trimmedLink.startsWith('http'))) {
-                const pdfBox = document.createElement('div');
-                pdfBox.className = 'pdf-box';
-                pdfBox.style.marginBottom = "10px";
-                pdfBox.innerHTML = `
-                    <span class="pdf-text">📄 เอกสารประกอบเรียน (${index + 1})</span>
-                    <a href="${trimmedLink}" target="_blank" class="pdf-link">เปิดไฟล์เรียน</a>
-                `;
-                groupDiv.appendChild(pdfBox);
+        const group = document.createElement('div');
+        group.style.marginTop = "15px";
+        links.forEach((link, i) => {
+            const tLink = link.trim();
+            if (tLink.startsWith('http')) {
+                const box = document.createElement('div');
+                box.className = 'pdf-box';
+                box.style.marginBottom = "10px";
+                box.innerHTML = `<span class="pdf-text">📄 เอกสารเรียน (${i+1})</span><a href="${tLink}" target="_blank" class="pdf-link">เปิดไฟล์</a>`;
+                group.appendChild(box);
             }
         });
-        container.appendChild(groupDiv);
+        container.appendChild(group);
     }
 }
-
 document.getElementById('logout-btn').addEventListener('click', () => location.reload());
