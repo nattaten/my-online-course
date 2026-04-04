@@ -10,16 +10,21 @@
 <body>
     <div class="container">
         <div id="login-section">
-            <h1>เข้าสู่ระบบเพื่อเรียน</h1>
-            <input type="email" id="email" placeholder="อีเมล">
+            <div class="login-logo">📐</div>
+            <h1>Math 10 10 10</h1>
+            <p class="login-subtitle">เข้าสู่ระบบเพื่อเริ่มเรียน</p>
+            <input type="email" id="email" placeholder="อีเมลของคุณ">
             <input type="password" id="password" placeholder="รหัสผ่าน">
-            <button id="login-btn">เข้าสู่บทเรียน</button>
+            <button id="login-btn">
+                <span id="btn-text">เข้าสู่บทเรียน</span>
+                <span id="btn-loader" style="display:none;">⏳ กำลังตรวจสอบ...</span>
+            </button>
             <p id="error-msg" class="error"></p>
         </div>
         <div id="video-section" style="display: none;">
             <div class="header">
                 <h2 id="course-title">ยินดีต้อนรับ</h2>
-                <button id="logout-btn">ออกจากระบบ</button>
+                <button id="logout-btn">🚪 ออกจากระบบ</button>
             </div>
             <div id="player-wrapper"></div>
             <div id="pdf-container"></div>
