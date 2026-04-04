@@ -321,3 +321,18 @@ button#logout-btn:hover {
 
     .pdf-link { width: 100%; text-align: center; }
 }
+
+/* Course header (แสดงเมื่อนักเรียนมีหลายคอร์ส) */
+.course-header {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--white);
+    background: linear-gradient(135deg, var(--primary), var(--primary-d));
+    padding: 11px 16px;
+    border-radius: 10px;
+    margin-top: 20px;
+    margin-bottom: 4px;
+    letter-spacing: 0.02em;
+}
+
+.course-header:first-child { margin-top: 0; }

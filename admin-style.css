@@ -378,3 +378,45 @@ select option { background: var(--surface2); }
     .main-content { margin-left: 0; padding: 20px 16px; }
     .stats-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ==============================
+   INLINE EDIT FORM
+============================== */
+.edit-btn {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-muted); font-size: 15px;
+    padding: 4px 6px; border-radius: 4px;
+    transition: color 0.2s, background 0.2s;
+    flex-shrink: 0;
+}
+.edit-btn:hover { color: var(--accent); background: var(--accent-g); }
+
+.edit-form {
+    width: 100%;
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 4px 0;
+}
+
+.edit-row {
+    display: flex; gap: 10px;
+}
+
+.edit-row .field { flex: 1; }
+
+.edit-actions {
+    display: flex; gap: 8px; justify-content: flex-end;
+    padding-top: 4px;
+}
+
+/* ทำให้ list-item รองรับ edit form ที่กว้างกว่า */
+.list-item:has(.edit-form) {
+    flex-direction: column;
+    align-items: stretch;
+    background: var(--surface);
+    border-color: var(--accent);
+    padding: 16px;
+}
+
+@media (max-width: 600px) {
+    .edit-row { flex-direction: column; gap: 8px; }
+}
