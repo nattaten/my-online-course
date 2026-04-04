@@ -1,212 +1,69 @@
-/* 1. นำเข้า Font Kanit จาก Google Fonts */
 @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500&display=swap');
 
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    font-family: 'Kanit', sans-serif;
-}
+* { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Kanit', sans-serif; }
 
 body {
     background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
     min-height: 100vh;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 20px;
+    display: flex; justify-content: center; align-items: center; padding: 20px;
 }
 
-/* 2. Layout หลัก */
 .container {
-    background: #ffffff;
-    width: 100%;
-    max-width: 900px;
-    padding: 40px;
-    border-radius: 20px;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    background: #ffffff; width: 100%; max-width: 900px; padding: 40px;
+    border-radius: 20px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
 }
 
-/* 3. หน้า Login */
-#login-section {
-    text-align: center;
-    max-width: 400px;
-    margin: 0 auto;
-}
+#login-section { text-align: center; max-width: 400px; margin: 0 auto; }
 
-h1 {
-    color: #0369a1;
-    margin-bottom: 25px;
-    font-size: 28px;
-}
+h1 { color: #0369a1; margin-bottom: 25px; font-size: 28px; }
 
 input {
-    width: 100%;
-    padding: 12px 15px;
-    margin-bottom: 15px;
-    border: 2px solid #e2e8f0;
-    border-radius: 10px;
-    outline: none;
-    transition: 0.3s;
+    width: 100%; padding: 12px 15px; margin-bottom: 15px;
+    border: 2px solid #e2e8f0; border-radius: 10px; outline: none; transition: 0.3s;
 }
 
-input:focus {
-    border-color: #0ea5e9;
-    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2);
-}
+input:focus { border-color: #0ea5e9; box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2); }
 
 button#login-btn {
-    width: 100%;
-    padding: 12px;
-    background: #0ea5e9;
-    color: white;
-    border: none;
-    border-radius: 10px;
-    font-size: 18px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: 0.3s;
+    width: 100%; padding: 12px; background: #0ea5e9; color: white;
+    border: none; border-radius: 10px; font-size: 18px; font-weight: 500; cursor: pointer; transition: 0.3s;
 }
 
-button#login-btn:hover {
-    background: #0284c7;
-    transform: translateY(-2px);
-}
+button#login-btn:hover { background: #0284c7; transform: translateY(-2px); }
 
-.error {
-    color: #ef4444;
-    font-size: 14px;
-    margin-top: 10px;
-}
+.error { color: #ef4444; font-size: 14px; margin-top: 10px; }
 
-/* 4. ส่วนหัว (Header) */
-.header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
-    border-bottom: 2px solid #f1f5f9;
-    padding-bottom: 15px;
-}
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; }
 
-h2#course-title {
-    color: #0c4a6e;
-    font-size: 22px;
-}
+h2#course-title { color: #0c4a6e; font-size: 22px; }
 
-button#logout-btn {
-    padding: 8px 15px;
-    background: #ef4444;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: 0.2s;
-}
+button#logout-btn { padding: 8px 15px; background: #ef4444; color: white; border: none; border-radius: 8px; cursor: pointer; transition: 0.2s; }
 
-button#logout-btn:hover {
-    background: #dc2626;
-}
+.video-container { border-radius: 15px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.15); background: #000; }
 
-/* 5. Video Player */
-.video-container {
-    border-radius: 15px;
-    overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    background: #000;
-}
-
-/* 6. ส่วนดาวน์โหลด PDF (รองรับหลายไฟล์) */
-#pdf-container {
-    margin-top: 20px;
-    margin-bottom: 20px;
-}
+#pdf-container { margin-top: 20px; margin-bottom: 20px; }
 
 .pdf-box {
-    background: #f0f9ff;
-    border: 1px dashed #0ea5e9;
-    padding: 12px 18px;
-    border-radius: 12px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    transition: 0.3s;
-    margin-bottom: 10px; /* เว้นระยะห่างระหว่างไฟล์ */
-    animation: slideDown 0.3s ease-out;
+    background: #f0f9ff; border: 1px dashed #0ea5e9; padding: 12px 18px; border-radius: 12px;
+    display: flex; justify-content: space-between; align-items: center; transition: 0.3s; margin-bottom: 10px; animation: slideDown 0.3s ease-out;
 }
 
-.pdf-text {
-    color: #0369a1;
-    font-weight: 500;
-}
+.pdf-text { color: #0369a1; font-weight: 500; }
 
-.pdf-link {
-    background: #0ea5e9;
-    color: white;
-    padding: 8px 18px;
-    border-radius: 8px;
-    text-decoration: none;
-    font-size: 14px;
-    transition: 0.3s;
-}
+.pdf-link { background: #0ea5e9; color: white; padding: 8px 18px; border-radius: 8px; text-decoration: none; font-size: 14px; transition: 0.3s; }
 
-.pdf-link:hover {
-    background: #0369a1;
-    transform: scale(1.05);
-}
+.pdf-link:hover { background: #0369a1; transform: scale(1.05); }
 
-/* 7. Playlist บทเรียน */
-.playlist {
-    margin-top: 15px;
-    display: grid;
-    gap: 10px;
-}
+.playlist { margin-top: 15px; display: grid; gap: 10px; }
 
-.lesson-btn {
-    width: 100%;
-    padding: 15px;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    text-align: left;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    transition: 0.2s;
-}
+.lesson-btn { width: 100%; padding: 15px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; text-align: left; cursor: pointer; display: flex; align-items: center; transition: 0.2s; }
 
-.lesson-btn:hover {
-    background: #f0f9ff;
-    border-color: #7dd3fc;
-    color: #0369a1;
-}
+.lesson-btn.active { background: #e0f2fe; border-color: #0ea5e9; color: #0369a1; font-weight: 500; }
 
-.lesson-btn.active {
-    background: #e0f2fe;
-    border-color: #0ea5e9;
-    color: #0369a1;
-    font-weight: 500;
-}
+@keyframes slideDown { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
 
-/* 8. Animations */
-@keyframes slideDown {
-    from { opacity: 0; transform: translateY(-5px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-/* 9. Responsive (รองรับมือถือ) */
 @media (max-width: 600px) {
-    .container {
-        padding: 20px;
-    }
-    .header {
-        flex-direction: column;
-        gap: 10px;
-        text-align: center;
-    }
-    .pdf-box {
-        flex-direction: column;
-        gap: 10px;
-        text-align: center;
-    }
+    .container { padding: 20px; }
+    .header { flex-direction: column; gap: 10px; text-align: center; }
+    .pdf-box { flex-direction: column; gap: 10px; text-align: center; }
 }

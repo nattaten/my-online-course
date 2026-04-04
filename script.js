@@ -6,10 +6,12 @@ const _supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 const loginBtn = document.getElementById('login-btn');
 
 loginBtn.addEventListener('click', async () => {
-    console.log("กำลังพยายาม Login ด้วย:", email, password);
+    // ดึงค่าจากหน้าเว็บมาเก็บในตัวแปรก่อน
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value.trim();
     const errorMsg = document.getElementById('error-msg');
+
+    console.log("กำลังพยายาม Login ด้วย:", email); // พิมพ์เช็คแค่ email เพื่อความปลอดภัย
 
     if (!email || !password) {
         alert("กรุณากรอกข้อมูลให้ครบ");
@@ -82,7 +84,6 @@ function showVideoPage(userData, lessons) {
         ? `https://www.youtube.com/embed/${firstId}` 
         : `https://player.vimeo.com/video/${firstId}`;
 
-    // แสดงผลวิดีโอและ playlist
     playerWrapper.innerHTML = `
         <div class="video-container" style="position:relative; padding-bottom:56.25%; height:0; overflow:hidden; border-radius:12px; background:#000;">
             <iframe id="main-player" src="${firstSrc}" 
@@ -94,7 +95,6 @@ function showVideoPage(userData, lessons) {
         </div>
     `;
 
-    // อัปเดต PDF ของวิดีโอตัวแรก
     updatePdfButton(firstPdf);
 }
 
@@ -113,7 +113,7 @@ window.changeVideo = function(id, pdfUrl, btnElement) {
 
 function updatePdfButton(url) {
     const container = document.getElementById('pdf-container');
-    container.innerHTML = ""; // ล้างค่าเก่า
+    container.innerHTML = ""; 
 
     if (url && url.trim() !== "" && url !== "null") {
         const links = url.split(',');
@@ -122,7 +122,7 @@ function updatePdfButton(url) {
 
         links.forEach((link, index) => {
             const trimmedLink = link.trim();
-            if (trimmedLink && trimmedLink.startsWith('http')) {
+            if (trimmedLink && (trimmedLink.startsWith('http'))) {
                 const pdfBox = document.createElement('div');
                 pdfBox.className = 'pdf-box';
                 pdfBox.style.marginBottom = "10px";
