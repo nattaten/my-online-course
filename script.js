@@ -78,37 +78,28 @@ window.changeVideo = function(id, pdfUrl, btnElement) {
 // ฟังก์ชันสำหรับอัปเดตปุ่ม PDF (รองรับหลายไฟล์โดยคั่นด้วยเครื่องหมาย ,)
 function updatePdfButton(url) {
     const container = document.getElementById('pdf-container');
-    
-    // ล้างข้อมูลเก่าออกก่อน
-    container.innerHTML = "";
+    container.innerHTML = ""; // ล้างค่าเก่า
 
-    if (url && url !== "" && url !== "null") {
-        // แยกลิงก์ออกมาเป็น Array โดยใช้ , เป็นตัวแบ่ง
+    // เช็คว่า url มีค่าจริงๆ และไม่ใช่ข้อความว่า "null"
+    if (url && url.trim() !== "" && url !== "null") {
         const links = url.split(',');
-
-        // สร้างกล่องครอบสำหรับกลุ่มไฟล์
         const groupDiv = document.createElement('div');
-        groupDiv.style.display = "flex";
-        groupDiv.style.direction = "column"; // เรียงจากบนลงล่าง
-        groupDiv.style.flexDirection = "column";
-        groupDiv.style.gap = "10px";
-        groupDiv.style.marginTop = "15px";
+        groupDiv.className = "pdf-group-wrapper"; // ตั้งชื่อ class ให้จัดการง่าย
+        groupDiv.style.marginTop = "20px";
 
         links.forEach((link, index) => {
-            const trimmedLink = link.trim(); // ตัดช่องว่างหน้า-หลังลิงก์ออก
-            
-            if (trimmedLink) {
-                // สร้าง HTML ของแต่ละปุ่ม
+            const trimmedLink = link.trim();
+            if (trimmedLink && trimmedLink.startsWith('http')) { // เช็คว่าเป็นลิงก์จริงไหม
                 const pdfBox = document.createElement('div');
                 pdfBox.className = 'pdf-box';
+                pdfBox.style.marginBottom = "10px"; // ระยะห่างระหว่างปุ่ม
                 pdfBox.innerHTML = `
-                    <span class="pdf-text">📄 เอกสารประกอบการเรียนที่ ${index + 1}</span>
-                    <a href="${trimmedLink}" target="_blank" class="pdf-link">เปิดไฟล์</a>
+                    <span class="pdf-text">📄 เอกสารประกอบเรียน (${index + 1})</span>
+                    <a href="${trimmedLink}" target="_blank" class="pdf-link">เปิดไฟล์เรียน</a>
                 `;
                 groupDiv.appendChild(pdfBox);
             }
         });
-
         container.appendChild(groupDiv);
     }
 }
