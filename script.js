@@ -6,12 +6,13 @@ const _supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 const loginBtn = document.getElementById('login-btn');
 
 loginBtn.addEventListener('click', async () => {
-    // ดึงค่าจากหน้าเว็บมาเก็บในตัวแปรก่อน
+    // 1. ต้องดึงค่าจาก Element มาเก็บในตัวแปรก่อน "ห้ามสลับลำดับ"
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value.trim();
     const errorMsg = document.getElementById('error-msg');
 
-    console.log("กำลังพยายาม Login ด้วย:", email); // พิมพ์เช็คแค่ email เพื่อความปลอดภัย
+    // 2. ค่อยสั่ง Console log (ตอนนี้ email มีค่าแล้ว จะไม่ Error)
+    console.log("กำลังพยายาม Login ด้วย:", email);
 
     if (!email || !password) {
         alert("กรุณากรอกข้อมูลให้ครบ");
@@ -113,6 +114,7 @@ window.changeVideo = function(id, pdfUrl, btnElement) {
 
 function updatePdfButton(url) {
     const container = document.getElementById('pdf-container');
+    if (!container) return; // กันพังถ้าหา container ไม่เจอ
     container.innerHTML = ""; 
 
     if (url && url.trim() !== "" && url !== "null") {
