@@ -6,6 +6,7 @@ const _supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 const loginBtn = document.getElementById('login-btn');
 
 loginBtn.addEventListener('click', async () => {
+    console.log("กำลังพยายาม Login ด้วย:", email, password);
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value.trim();
     const errorMsg = document.getElementById('error-msg');
