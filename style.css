@@ -1,4 +1,4 @@
-/* นำเข้า Font สวยๆ จาก Google Fonts */
+/* 1. นำเข้า Font Kanit จาก Google Fonts */
 @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500&display=swap');
 
 * {
@@ -17,6 +17,7 @@ body {
     padding: 20px;
 }
 
+/* 2. Layout หลัก */
 .container {
     background: #ffffff;
     width: 100%;
@@ -26,7 +27,7 @@ body {
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
 }
 
-/* หน้า Login */
+/* 3. หน้า Login */
 #login-section {
     text-align: center;
     max-width: 400px;
@@ -72,7 +73,13 @@ button#login-btn:hover {
     transform: translateY(-2px);
 }
 
-/* ส่วนแสดงวิดีโอ */
+.error {
+    color: #ef4444;
+    font-size: 14px;
+    margin-top: 10px;
+}
+
+/* 4. ส่วนหัว (Header) */
 .header {
     display: flex;
     justify-content: space-between;
@@ -94,19 +101,63 @@ button#logout-btn {
     border: none;
     border-radius: 8px;
     cursor: pointer;
+    transition: 0.2s;
 }
 
-/* Video Player */
+button#logout-btn:hover {
+    background: #dc2626;
+}
+
+/* 5. Video Player */
 .video-container {
     border-radius: 15px;
     overflow: hidden;
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    background: #7dd3fc;
+    background: #000;
 }
 
-/* Playlist บทเรียน */
+/* 6. ส่วนดาวน์โหลด PDF (รองรับหลายไฟล์) */
+#pdf-container {
+    margin-top: 20px;
+    margin-bottom: 20px;
+}
+
+.pdf-box {
+    background: #f0f9ff;
+    border: 1px dashed #0ea5e9;
+    padding: 12px 18px;
+    border-radius: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: 0.3s;
+    margin-bottom: 10px; /* เว้นระยะห่างระหว่างไฟล์ */
+    animation: slideDown 0.3s ease-out;
+}
+
+.pdf-text {
+    color: #0369a1;
+    font-weight: 500;
+}
+
+.pdf-link {
+    background: #0ea5e9;
+    color: white;
+    padding: 8px 18px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-size: 14px;
+    transition: 0.3s;
+}
+
+.pdf-link:hover {
+    background: #0369a1;
+    transform: scale(1.05);
+}
+
+/* 7. Playlist บทเรียน */
 .playlist {
-    margin-top: 25px;
+    margin-top: 15px;
     display: grid;
     gap: 10px;
 }
@@ -137,8 +188,25 @@ button#logout-btn {
     font-weight: 500;
 }
 
-.error {
-    color: #ef4444;
-    font-size: 14px;
-    margin-top: 10px;
+/* 8. Animations */
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* 9. Responsive (รองรับมือถือ) */
+@media (max-width: 600px) {
+    .container {
+        padding: 20px;
+    }
+    .header {
+        flex-direction: column;
+        gap: 10px;
+        text-align: center;
+    }
+    .pdf-box {
+        flex-direction: column;
+        gap: 10px;
+        text-align: center;
+    }
 }
