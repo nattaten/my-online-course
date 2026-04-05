@@ -445,12 +445,24 @@ function renderSessionList(sessions) {
 }
 
 async function toggleSession(id, field, value) {
+    // สร้าง Object เพื่อเตรียมอัปเดตตามฟิลด์ที่ส่งมา (taught หรือ paid)
     const update = { [field]: value };
-    if (field==='paid'   && value)  update.paid_at = new Date().toISOString();
-    if (field==='paid'   && !value) update.paid_at = null;
-    if (field==='taught' && !value) { update.paid = false; update.paid_at = null; }
+
+    // Logic เพิ่มเติม: ถ้ากดยกเลิก "สอนแล้ว" (taught = false) 
+    // ให้เซต "จ่ายแล้ว" (paid) เป็น false ไปด้วยเลยเพื่อความถูกต้องของข้อมูล
+    if (field === 'taught' && !value) {
+        update.paid = false;
+    }
+
+    // อัปเดตไปยัง Supabase
     const { error } = await sb.from('weekly_sessions').update(update).eq('id', id);
-    if (error) { alert('อัปเดตไม่สำเร็จ: '+error.message); return; }
+
+    if (error) { 
+        alert('อัปเดตไม่สำเร็จ: ' + error.message); 
+        return; 
+    }
+
+    // โหลดข้อมูลใหม่เพื่อแสดงผล
     await loadWeekSessions();
     await loadStats();
 }
