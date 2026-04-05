@@ -515,41 +515,90 @@ async function saveFee(courseName) {
 async function loadMonthlySummary() {
     const picker = document.getElementById('month-picker');
     if (!picker?.value) return;
-    const [year, month] = picker.value.split('-').map(Number);
-    const startStr = new Date(year, month-1, 1).toISOString().split('T')[0];
-    const endStr   = new Date(year, month, 0).toISOString().split('T')[0];
 
-    const { data } = await sb.from('weekly_sessions')
-        .select('*').gte('week_start',startStr).lte('week_start',endStr)
-        .eq('taught',true).order('week_start');
+    // 1. เตรียมช่วงวันที่ของเดือนที่เลือก
+    const [year, month] = picker.value.split('-').map(Number);
+    const startOfMonth = new Date(year, month - 1, 1).toISOString().split('T')[0];
+    const endOfMonth = new Date(year, month, 0).toISOString().split('T')[0];
+
+    // 2. ดึงข้อมูล (ดึงสัปดาห์ที่ "คาบเกี่ยว" เดือนนี้มาทั้งหมดก่อน)
+    // ใช้ช่วงวันที่กว้างหน่อยเพื่อให้ครอบคลุมสัปดาห์ที่เริ่มปลายเดือนที่แล้วแต่จบเดือนนี้
+    const { data, error } = await sb.from('weekly_sessions')
+        .select('*')
+        .gte('week_start', new Date(year, month - 1, -6).toISOString().split('T')[0]) // ย้อนไป 6 วันเผื่อสัปดาห์คาบเกี่ยว
+        .lte('week_start', endOfMonth)
+        .eq('taught', true)
+        .order('week_start');
 
     const el = document.getElementById('month-summary');
-    if (!data?.length) { el.innerHTML = '<div style="text-align:center;padding:14px;color:var(--text-muted)">ไม่มีข้อมูลเดือนนี้</div>'; return; }
+    if (error || !data?.length) { 
+        el.innerHTML = '<div style="text-align:center;padding:14px;color:var(--text-muted)">ไม่มีข้อมูลเดือนนี้</div>'; 
+        return; 
+    }
 
+    // 3. กรองข้อมูลเอาเฉพาะรายการที่ "วันที่สอน" ตรงกับเดือนที่เลือกจริงๆ
+    // (สมมติว่ามีคอลัมน์ session_date ถ้าไม่มีให้ใช้ week_start แทนแต่ยอดอาจจะไม่เป๊ะเท่า)
+    const filteredData = data.filter(s => {
+        const sDate = new Date(s.session_date || s.week_start);
+        return (sDate.getMonth() + 1) === month && sDate.getFullYear() === year;
+    });
+
+    if (filteredData.length === 0) {
+        el.innerHTML = '<div style="text-align:center;padding:14px;color:var(--text-muted)">ไม่มีข้อมูลเดือนนี้</div>';
+        return;
+    }
+
+    // 4. จัดกลุ่มข้อมูลตามสัปดาห์ (week_start)
     const byWeek = {};
-    data.forEach(s => { if(!byWeek[s.week_start]) byWeek[s.week_start]=[]; byWeek[s.week_start].push(s); });
+    filteredData.forEach(s => {
+        if (!byWeek[s.week_start]) byWeek[s.week_start] = [];
+        byWeek[s.week_start].push(s);
+    });
 
-    const totalExpected = data.reduce((a,s)=>a+(s.fee||0),0);
-    const totalReceived = data.filter(s=>s.paid).reduce((a,s)=>a+(s.fee||0),0);
+    // 5. คำนวณยอดรวมทั้งเดือน (เฉพาะที่กรองแล้ว)
+    const totalExpected = filteredData.reduce((a, s) => a + (s.fee || 0), 0);
+    const totalReceived = filteredData.filter(s => s.paid).reduce((a, s) => a + (s.fee || 0), 0);
 
+    // 6. สร้าง HTML
     let html = '';
-    Object.entries(byWeek).forEach(([ws, sessions]) => {
-        const d = new Date(ws); const e = new Date(ws); e.setDate(e.getDate()+6);
-        const lbl = `${d.getDate()}/${d.getMonth()+1} – ${e.getDate()}/${e.getMonth()+1}`;
-        const wTotal = sessions.reduce((a,s)=>a+(s.fee||0),0);
-        const wPaid  = sessions.filter(s=>s.paid).reduce((a,s)=>a+(s.fee||0),0);
-        html += `<div class="month-row">
+    
+    // เรียงตาม week_start เพื่อความสวยงาม
+    Object.keys(byWeek).sort().forEach(ws => {
+        const sessions = byWeek[ws];
+        
+        // จัดการวันที่ Label (29/3 - 4/4) ให้ตรงหน้าหลัก
+        const p = ws.split('-');
+        const dStart = new Date(p[0], p[1] - 1, p[2]);
+        const dEnd = new Date(dStart);
+        dEnd.setDate(dStart.getDate() + 6);
+
+        const lbl = `${dStart.getDate()}/${dStart.getMonth() + 1} – ${dEnd.getDate()}/${dEnd.getMonth() + 1}`;
+        
+        const wTotal = sessions.reduce((a, s) => a + (s.fee || 0), 0);
+        const wPaid  = sessions.filter(s => s.paid).reduce((a, s) => a + (s.fee || 0), 0);
+
+        html += `
+        <div class="month-row">
             <span>${lbl}</span>
             <span class="month-val">
-                ${wPaid>0?`<span class="green">฿${wPaid.toLocaleString()}</span>`:''}
-                ${wPaid<wTotal?`<span class="orange"> ค้าง฿${(wTotal-wPaid).toLocaleString()}</span>`:''}
+                ${wPaid > 0 ? `<span class="green">฿${wPaid.toLocaleString()}</span>` : ''}
+                ${wPaid < wTotal ? `<span class="orange"> ค้าง฿${(wTotal - wPaid).toLocaleString()}</span>` : ''}
             </span>
         </div>`;
     });
+
+    // ปิดท้ายด้วยสรุปยอดรวม
     html += `
-        <div class="month-row month-row-total"><span>รวมทั้งเดือน</span><span class="month-val">฿${totalExpected.toLocaleString()}</span></div>
-        <div class="month-row"><span>ได้รับแล้ว</span><span class="month-val green">฿${totalReceived.toLocaleString()}</span></div>
-        <div class="month-row"><span>ค้างจ่าย</span><span class="month-val orange">฿${(totalExpected-totalReceived).toLocaleString()}</span></div>`;
+        <div class="month-row month-row-total" style="margin-top:10px; border-top:1px solid #333; padding-top:10px;">
+            <span>รวมทั้งเดือน</span><span class="month-val">฿${totalExpected.toLocaleString()}</span>
+        </div>
+        <div class="month-row">
+            <span>ได้รับแล้ว</span><span class="month-val green">฿${totalReceived.toLocaleString()}</span>
+        </div>
+        <div class="month-row">
+            <span>ค้างจ่าย</span><span class="month-val orange">฿${(totalExpected - totalReceived).toLocaleString()}</span>
+        </div>`;
+
     el.innerHTML = html;
 }
 
