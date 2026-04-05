@@ -242,12 +242,17 @@
 
             <!-- Week Navigator -->
             <div class="week-nav">
-                <button class="week-btn" onclick="changeWeek(-1)">‹ สัปดาห์ก่อน</button>
-                <div class="week-label-wrap">
-                    <span id="week-label">กำลังโหลด...</span>
-                    <button class="week-today-btn" onclick="goToCurrentWeek()">สัปดาห์นี้</button>
+                <div class="week-nav-top">
+                    <button class="week-btn" onclick="changeWeek(-1)">‹</button>
+                    <div class="week-center">
+                        <span id="week-label">กำลังโหลด...</span>
+                        <div class="week-meta">
+                            <span id="week-current-badge" class="week-current-badge" style="display:none;">สัปดาห์นี้</span>
+                            <button class="week-today-btn" id="week-goto-btn" onclick="goToCurrentWeek()">กลับสัปดาห์นี้</button>
+                        </div>
+                    </div>
+                    <button class="week-btn" onclick="changeWeek(1)">›</button>
                 </div>
-                <button class="week-btn" onclick="changeWeek(1)">สัปดาห์หน้า ›</button>
             </div>
 
             <!-- Week Summary Bar -->

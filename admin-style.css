@@ -274,41 +274,58 @@ select option { background:var(--surface2); }
 .modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:16px; }
 .modal-actions .btn { width:auto; }
 
-/* FINANCE */
+/* FINANCE — WEEK NAV */
 .week-nav {
-    display:flex; align-items:center; justify-content:space-between;
     background:var(--surface); border:1px solid var(--border);
-    border-radius:var(--radius); padding:14px 16px;
-    margin-bottom:16px; gap:8px;
+    border-radius:14px; padding:20px;
+    margin-bottom:16px;
 }
-.week-label-wrap { display:flex; flex-direction:column; align-items:center; gap:6px; flex:1; }
-#week-label { font-size:15px; font-weight:600; text-align:center; }
+.week-nav-top {
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+}
 .week-btn {
     background:var(--surface2); border:1px solid var(--border);
-    border-radius:8px; color:var(--text-dim);
-    font-family:inherit; font-size:13px; font-weight:500;
-    padding:9px 14px; cursor:pointer;
-    transition:border-color 0.15s, color 0.15s; white-space:nowrap; min-height:42px;
+    border-radius:10px; color:var(--text-dim);
+    font-family:inherit; font-size:20px; font-weight:400;
+    width:44px; height:44px; cursor:pointer; flex-shrink:0;
+    transition:border-color 0.15s, color 0.15s, background 0.15s;
+    display:flex; align-items:center; justify-content:center;
 }
-.week-btn:hover { border-color:var(--accent); color:var(--accent); }
+.week-btn:hover { border-color:var(--accent); color:var(--accent); background:var(--accent-g); }
+.week-center { flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; }
+#week-label  { font-size:15px; font-weight:600; text-align:center; color:var(--text); }
+.week-meta   { display:flex; align-items:center; gap:8px; }
+.week-current-badge {
+    background:var(--accent); color:#fff;
+    font-size:10px; font-weight:700; padding:3px 9px;
+    border-radius:20px; letter-spacing:0.04em;
+}
 .week-today-btn {
-    background:var(--accent-g); border:1px solid var(--accent);
-    border-radius:6px; color:var(--accent);
+    background:var(--surface2); border:1px solid var(--border);
+    border-radius:6px; color:var(--text-muted);
     font-family:inherit; font-size:11px; font-weight:600;
     padding:4px 10px; cursor:pointer;
+    transition:border-color 0.15s, color 0.15s;
 }
+.week-today-btn:hover { border-color:var(--accent); color:var(--accent); }
+
 .finance-summary {
     display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:18px;
 }
 .summary-card {
     background:var(--surface); border:1px solid var(--border);
-    border-radius:var(--radius); padding:14px 16px;
-    display:flex; flex-direction:column; gap:4px;
+    border-radius:var(--radius); padding:16px;
+    display:flex; flex-direction:column; gap:5px;
+    position:relative; overflow:hidden;
 }
-.summary-card.success { border-color:rgba(16,185,129,0.4); }
-.summary-card.danger  { border-color:rgba(239,68,68,0.4); }
+.summary-card::before {
+    content:''; position:absolute; top:0; left:0; right:0; height:3px;
+    background:var(--border);
+}
+.summary-card.success::before { background:var(--success); }
+.summary-card.danger::before  { background:var(--danger); }
 .summary-label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; }
-.summary-val   { font-family:var(--mono); font-size:22px; font-weight:500; color:var(--text); }
+.summary-val   { font-family:var(--mono); font-size:22px; font-weight:600; color:var(--text); }
 .summary-card.success .summary-val { color:var(--success); }
 .summary-card.danger  .summary-val { color:var(--danger); }
 
@@ -359,21 +376,64 @@ select option { background:var(--surface2); }
 }
 .fee-save-btn:hover { opacity:0.8; }
 
-/* Monthly */
+/* Monthly summary dashboard */
 .month-summary-wrap { margin-top:8px; }
-.month-summary {
+.month-summary { margin-top:10px; }
+.month-empty { text-align:center; padding:24px; color:var(--text-muted); font-size:13px; }
+
+/* KPI row */
+.ms-top-row {
+    display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px;
+}
+.ms-kpi {
     background:var(--surface2); border:1px solid var(--border);
-    border-radius:8px; padding:14px; margin-top:10px; font-size:13px;
+    border-radius:10px; padding:12px;
+    display:flex; flex-direction:column; gap:3px; align-items:center;
 }
-.month-row {
-    display:flex; justify-content:space-between; align-items:center;
-    padding:7px 0; border-bottom:1px solid var(--border);
+.ms-kpi.success { border-color:rgba(16,185,129,0.35); }
+.ms-kpi.warn    { border-color:rgba(245,158,11,0.35); }
+.ms-kpi-val {
+    font-family:var(--mono); font-size:16px; font-weight:600; color:var(--text);
 }
-.month-row:last-child { border-bottom:none; }
-.month-row-total { font-weight:600; color:var(--text); border-top:1px solid var(--border); padding-top:10px; margin-top:4px; }
-.month-val { font-family:var(--mono); }
-.month-val .green  { color:var(--success); }
-.month-val .orange { color:var(--warn); }
+.ms-kpi.success .ms-kpi-val { color:var(--success); }
+.ms-kpi.warn    .ms-kpi-val { color:var(--warn); }
+.ms-kpi-label { font-size:10px; color:var(--text-muted); text-align:center; }
+
+.ms-taught-row { margin-bottom:14px; }
+.ms-taught-badge {
+    display:inline-block; background:var(--accent-g);
+    border:1px solid rgba(59,130,246,0.3);
+    color:var(--accent); border-radius:20px;
+    font-size:11px; font-weight:500; padding:4px 12px;
+}
+
+/* Course cards grid */
+.ms-course-grid { display:flex; flex-direction:column; gap:8px; }
+.ms-course-card {
+    background:var(--surface2); border:1px solid var(--border);
+    border-radius:10px; padding:12px 14px;
+    transition:border-color 0.15s;
+}
+.ms-course-card.ms-paid { border-color:rgba(16,185,129,0.4); }
+.ms-course-header {
+    display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;
+}
+.ms-course-name { font-size:13px; font-weight:600; color:var(--text); }
+.ms-course-sessions { font-size:11px; color:var(--text-muted); }
+
+/* Progress bar */
+.ms-progress-bar {
+    height:5px; background:var(--border); border-radius:4px; margin-bottom:7px; overflow:hidden;
+}
+.ms-progress-fill {
+    height:100%; background:var(--success);
+    border-radius:4px; transition:width 0.4s ease;
+    min-width:2px;
+}
+
+.ms-course-amounts { display:flex; align-items:baseline; gap:4px; }
+.ms-amt-received { font-family:var(--mono); font-size:14px; font-weight:600; color:var(--success); }
+.ms-amt-total    { font-family:var(--mono); font-size:11px; color:var(--text-muted); }
 
 /* ANIMATIONS */
 @keyframes fadeUp {
