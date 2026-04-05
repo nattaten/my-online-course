@@ -545,19 +545,22 @@ async function loadMonthlySummary() {
     const allCourseNames = [...new Set(data.map(s => s.course_name))].sort();
 
     allCourseNames.forEach(name => {
-        const rows = data.filter(s => s.course_name === name);
+        const rows       = data.filter(s => s.course_name === name);
+        const taughtRows = rows.filter(s => s.taught); // เฉพาะที่สอนจริง
         byCourse[name] = {
-            total:    rows.reduce((a,s) => a + (s.fee||0), 0),
-            received: rows.filter(s => s.paid).reduce((a,s) => a + (s.fee||0), 0),
-            taught:   rows.filter(s => s.taught).length,
+            total:    taughtRows.reduce((a,s) => a + (s.fee||0), 0),
+            received: taughtRows.filter(s => s.paid).reduce((a,s) => a + (s.fee||0), 0),
+            taught:   taughtRows.length,
             sessions: rows.length,
         };
     });
 
-    const grandTotal    = data.reduce((a,s) => a+(s.fee||0), 0);
-    const grandReceived = data.filter(s=>s.paid).reduce((a,s) => a+(s.fee||0), 0);
+    // ยอดรวมเฉพาะที่สอนจริง
+    const taughtData    = data.filter(s => s.taught);
+    const grandTotal    = taughtData.reduce((a,s) => a+(s.fee||0), 0);
+    const grandReceived = taughtData.filter(s=>s.paid).reduce((a,s) => a+(s.fee||0), 0);
     const grandPending  = grandTotal - grandReceived;
-    const taughtCount   = data.filter(s=>s.taught).length;
+    const taughtCount   = taughtData.length;
 
     // --- สรุป top ---
     let html = `
