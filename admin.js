@@ -1,21 +1,40 @@
 // ==============================
 // CONFIG
 // ==============================
-const SUPABASE_URL = 'https://zbekvirvhahjtocnitaq.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpiZWt2aXJ2aGFoanRvY25pdGFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMDgzMDMsImV4cCI6MjA5MDY4NDMwM30.rM07BjG64N_jKrWcIcGovb5xtHPiPGFWKvvV2A_i9Ts';
-const ADMIN_PASSWORD = 'admin1234'; // เปลี่ยนได้
+const SUPABASE_URL   = 'https://zbekvirvhahjtocnitaq.supabase.co';
+const SUPABASE_KEY   = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpiZWt2aXJ2aGFoanRvY25pdGFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMDgzMDMsImV4cCI6MjA5MDY4NDMwM30.rM07BjG64N_jKrWcIcGovb5xtHPiPGFWKvvV2A_i9Ts';
+const ADMIN_PASSWORD = 'admin1234';
+const SESSION_KEY    = 'math_admin_v1';
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ==============================
+// GLOBAL STATE
+// ==============================
+let _allCourses     = [];
+let _currentLessons = [];
+let _lessonMap      = {};
+let _dragSrcId      = null;
+let _pendingAction  = null;
+let _chartIncome    = null;
+let _chartStudents  = null;
+let _currentWeekStart = getWeekStart(new Date());
 
 // ==============================
 // INIT
 // ==============================
 document.addEventListener('DOMContentLoaded', () => {
+    // ---- Session persistence ----
+    if (localStorage.getItem(SESSION_KEY) === '1') {
+        document.getElementById('login-screen').style.display = 'none';
+        document.getElementById('dashboard').style.display    = 'flex';
+        initDashboard();
+    }
+
     document.getElementById('admin-pass')?.addEventListener('keydown', e => {
         if (e.key === 'Enter') checkAdminLogin();
     });
 
-    // Tab nav: sidebar + bottom nav
     document.querySelectorAll('.nav-item, .bottom-nav-item').forEach(link => {
         link.addEventListener('click', e => {
             e.preventDefault();
@@ -23,7 +42,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Content type toggle
     document.querySelectorAll('.toggle-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
@@ -32,7 +50,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Month picker
     const mp = document.getElementById('month-picker');
     if (mp) {
         const now = new Date();
@@ -40,11 +57,13 @@ document.addEventListener('DOMContentLoaded', () => {
         mp.addEventListener('change', loadMonthlySummary);
     }
 
-    // Close modals on backdrop click
-    ['confirm-modal','edit-student-modal'].forEach(id => {
+    ['confirm-modal','edit-student-modal','edit-lesson-modal','preview-modal'].forEach(id => {
         document.getElementById(id)?.addEventListener('click', e => {
             if (e.target.id === id) {
-                id === 'confirm-modal' ? closeModal() : closeEditStudentModal();
+                if (id === 'confirm-modal')       closeModal();
+                else if (id === 'edit-student-modal') closeEditStudentModal();
+                else if (id === 'edit-lesson-modal')  closeEditLessonModal();
+                else if (id === 'preview-modal')      closePreviewModal();
             }
         });
     });
@@ -65,6 +84,7 @@ function checkAdminLogin() {
     const input = document.getElementById('admin-pass').value;
     const err   = document.getElementById('login-err');
     if (input === ADMIN_PASSWORD) {
+        localStorage.setItem(SESSION_KEY, '1');
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('dashboard').style.display    = 'flex';
         initDashboard();
@@ -73,7 +93,11 @@ function checkAdminLogin() {
         document.getElementById('admin-pass').value = '';
     }
 }
-function adminLogout() { location.reload(); }
+
+function adminLogout() {
+    localStorage.removeItem(SESSION_KEY);
+    location.reload();
+}
 
 // ==============================
 // DASHBOARD INIT
@@ -85,6 +109,7 @@ async function initDashboard() {
         loadLessonList(), loadStudentList(),
         initFinance(),
     ]);
+    loadCharts();
 }
 
 // ==============================
@@ -131,10 +156,155 @@ async function loadRecentStudents() {
 }
 
 // ==============================
+// CHARTS
+// ==============================
+async function loadCharts() {
+    await Promise.all([renderIncomeChart(), renderStudentsChart()]);
+}
+
+async function renderIncomeChart() {
+    const months = getLast6Months();
+    const firstMonth = months[0];
+    const lastMonth  = months[months.length - 1];
+
+    // Fetch range with overlap buffer for smart attribution
+    const startFetch = new Date(firstMonth + '-01');
+    startFetch.setDate(startFetch.getDate() - 6);
+    const endFetch   = new Date(lastMonth + '-01');
+    endFetch.setMonth(endFetch.getMonth() + 1);
+    endFetch.setDate(0);
+
+    const { data } = await sb.from('weekly_sessions')
+        .select('*')
+        .gte('week_start', startFetch.toISOString().split('T')[0])
+        .lte('week_start', endFetch.toISOString().split('T')[0])
+        .eq('taught', true);
+
+    const incomeByMonth = {};
+    const receivedByMonth = {};
+    months.forEach(m => { incomeByMonth[m] = 0; receivedByMonth[m] = 0; });
+
+    for (const session of (data || [])) {
+        const attrs = attributeSessionFee(session);
+        for (const a of attrs) {
+            if (incomeByMonth.hasOwnProperty(a.month)) {
+                incomeByMonth[a.month]    += a.amount;
+                if (session.paid) receivedByMonth[a.month] += a.amount;
+            }
+        }
+    }
+
+    const labels   = months.map(m => formatMonthLabel(m));
+    const totalArr = months.map(m => Math.round(incomeByMonth[m]));
+    const recArr   = months.map(m => Math.round(receivedByMonth[m]));
+
+    const ctx = document.getElementById('chart-income').getContext('2d');
+    if (_chartIncome) _chartIncome.destroy();
+    _chartIncome = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'ควรได้รับ',
+                    data: totalArr,
+                    backgroundColor: 'rgba(59,130,246,0.25)',
+                    borderColor: '#3b82f6',
+                    borderWidth: 2,
+                    borderRadius: 6,
+                },
+                {
+                    label: 'ได้รับแล้ว',
+                    data: recArr,
+                    backgroundColor: 'rgba(16,185,129,0.35)',
+                    borderColor: '#10b981',
+                    borderWidth: 2,
+                    borderRadius: 6,
+                },
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { labels: { color: '#94a3b8', font: { size: 11 } } },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => ` ฿${ctx.parsed.y.toLocaleString()}`
+                    }
+                }
+            },
+            scales: {
+                x: { ticks: { color: '#94a3b8' }, grid: { color: '#2a3045' } },
+                y: {
+                    ticks: { color: '#94a3b8', callback: v => '฿'+v.toLocaleString() },
+                    grid: { color: '#2a3045' },
+                    beginAtZero: true,
+                }
+            }
+        }
+    });
+}
+
+async function renderStudentsChart() {
+    const { data } = await sb.from('users_courses').select('course_name');
+    const counts = {};
+    (data || []).forEach(r => { counts[r.course_name] = (counts[r.course_name] || 0) + 1; });
+    const labels = Object.keys(counts).sort();
+    const values = labels.map(l => counts[l]);
+
+    const COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#ec4899'];
+
+    const ctx = document.getElementById('chart-students').getContext('2d');
+    if (_chartStudents) _chartStudents.destroy();
+    _chartStudents = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels,
+            datasets: [{
+                data: values,
+                backgroundColor: labels.map((_, i) => COLORS[i % COLORS.length] + '99'),
+                borderColor:     labels.map((_, i) => COLORS[i % COLORS.length]),
+                borderWidth: 2,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { color: '#94a3b8', font: { size: 11 }, padding: 10, boxWidth: 12 }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => ` ${ctx.label}: ${ctx.parsed} คน`
+                    }
+                }
+            },
+        }
+    });
+}
+
+function getLast6Months() {
+    const months = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        months.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+    }
+    return months;
+}
+
+function formatMonthLabel(ym) {
+    const [y, m] = ym.split('-').map(Number);
+    const d = new Date(y, m - 1, 1);
+    return d.toLocaleDateString('th-TH', { month: 'short', year: '2-digit' });
+}
+
+// ==============================
 // COURSE DROPDOWNS
 // ==============================
-let _allCourses = [];
-
 async function loadCourseDropdowns() {
     const { data } = await sb.from('courses').select('*').order('id');
     _allCourses = data || [];
@@ -171,6 +341,7 @@ async function addCourse() {
     showMsg(msg,`✅ เพิ่มคอร์ส "${name}" สำเร็จ`,'success');
     nameInput.value = '';
     await Promise.all([loadCourseList(), loadCourseDropdowns(), loadStats(), loadFeeSettings()]);
+    loadCharts();
 }
 
 async function deleteCourse(id) {
@@ -188,16 +359,36 @@ async function loadLessonList() {
     if (course) q = q.eq('course_name', course);
     const { data } = await q;
     const el = document.getElementById('lesson-list');
-    if (!data?.length) { el.innerHTML = '<div class="empty-state">ยังไม่มีบทเรียน</div>'; return; }
-    el.innerHTML = data.map(l=>`
-        <div class="list-item">
-            <div class="list-item-info">
-                <div class="list-item-name">${l.vimeo_id?'🎬':'📄'} ${l.lesson_title}</div>
-                <div class="list-item-sub">${l.course_name} · ${l.topic_name||'—'} · #${l.order_no}</div>
-                ${l.pdf_url?`<div class="list-item-sub" style="color:#6ee7b7;">📄 มีเอกสาร</div>`:''}
-            </div>
-            <button class="icon-btn delete" onclick="confirmDelete('ลบบทเรียน &quot;${l.lesson_title}&quot;?', ()=>deleteLesson(${l.id}))">🗑</button>
-        </div>`).join('');
+
+    if (!data?.length) {
+        el.innerHTML = '<div class="empty-state">ยังไม่มีบทเรียน</div>';
+        _currentLessons = [];
+        return;
+    }
+
+    _currentLessons = data;
+    _lessonMap = {};
+    data.forEach(l => { _lessonMap[l.id] = l; });
+
+    el.innerHTML = data.map(l => renderLessonItem(l)).join('');
+    attachDragListeners();
+}
+
+function renderLessonItem(l) {
+    const hasVideo = !!l.vimeo_id;
+    const hasPdf   = !!l.pdf_url;
+    return `
+    <div class="list-item draggable" draggable="true" data-id="${l.id}" data-order="${l.order_no}">
+        <span class="drag-handle" title="ลากเพื่อเรียงลำดับ">⣿</span>
+        <div class="list-item-info">
+            <div class="list-item-name">${hasVideo?'🎬':'📄'} ${l.lesson_title}</div>
+            <div class="list-item-sub">${l.course_name} · ${l.topic_name||'—'} · #${l.order_no}</div>
+            ${hasPdf?`<div class="list-item-sub" style="color:#6ee7b7;">📄 มีเอกสาร</div>`:''}
+        </div>
+        <button class="icon-btn preview" title="ดูตัวอย่าง" onclick="openPreviewModal(${l.id})">👁</button>
+        <button class="icon-btn edit" title="แก้ไข" onclick="openEditLessonModal(${l.id})">✏️</button>
+        <button class="icon-btn delete" title="ลบ" onclick="confirmDelete('ลบบทเรียน &quot;${l.lesson_title}&quot;?', ()=>deleteLesson(${l.id}))">🗑</button>
+    </div>`;
 }
 
 async function saveLesson() {
@@ -235,6 +426,198 @@ async function deleteLesson(id) {
     const { error } = await sb.from('lessons').delete().eq('id', id);
     if (error) { alert('ลบไม่สำเร็จ: '+error.message); return; }
     await Promise.all([loadLessonList(), loadStats()]);
+}
+
+// ==============================
+// EDIT LESSON MODAL
+// ==============================
+function openEditLessonModal(id) {
+    const l = _lessonMap[id];
+    if (!l) return;
+
+    document.getElementById('edit-lesson-id').value      = l.id;
+    document.getElementById('edit-lesson-topic').value   = l.topic_name  || '';
+    document.getElementById('edit-lesson-title').value   = l.lesson_title || '';
+    document.getElementById('edit-lesson-videoid').value = l.vimeo_id    || '';
+    document.getElementById('edit-lesson-order').value   = l.order_no    || 1;
+    document.getElementById('edit-lesson-pdf').value     = l.pdf_url     || '';
+    document.getElementById('edit-lesson-msg').textContent = '';
+
+    const sel = document.getElementById('edit-lesson-course');
+    sel.innerHTML = _allCourses.map(c =>
+        `<option value="${c.name}" ${c.name === l.course_name ? 'selected' : ''}>${c.name}</option>`
+    ).join('');
+
+    document.getElementById('edit-lesson-modal').style.display = 'flex';
+    setTimeout(() => document.getElementById('edit-lesson-title')?.focus(), 150);
+}
+
+function closeEditLessonModal() {
+    document.getElementById('edit-lesson-modal').style.display = 'none';
+}
+
+async function saveEditLesson() {
+    const id      = document.getElementById('edit-lesson-id').value;
+    const course  = document.getElementById('edit-lesson-course').value;
+    const topic   = document.getElementById('edit-lesson-topic').value.trim();
+    const title   = document.getElementById('edit-lesson-title').value.trim();
+    const videoId = document.getElementById('edit-lesson-videoid').value.trim();
+    const orderNo = document.getElementById('edit-lesson-order').value;
+    const pdfUrl  = document.getElementById('edit-lesson-pdf').value.trim();
+    const msg     = document.getElementById('edit-lesson-msg');
+
+    if (!course || !title) { showMsg(msg,'กรุณากรอกคอร์สและชื่อบทเรียน','error'); return; }
+
+    const saveBtn = document.querySelector('#edit-lesson-modal .btn-success');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'กำลังบันทึก...'; }
+
+    const { error } = await sb.from('lessons').update({
+        course_name:  course,
+        topic_name:   topic || 'ทั่วไป',
+        lesson_title: title,
+        vimeo_id:     videoId || null,
+        order_no:     parseInt(orderNo) || 1,
+        pdf_url:      pdfUrl || null,
+    }).eq('id', id);
+
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 บันทึก'; }
+
+    if (error) { showMsg(msg,'บันทึกไม่สำเร็จ: '+error.message,'error'); return; }
+    closeEditLessonModal();
+    await loadLessonList();
+}
+
+// ==============================
+// PREVIEW MODAL
+// ==============================
+function openPreviewModal(id) {
+    const l = _lessonMap[id];
+    if (!l) return;
+
+    document.getElementById('preview-title').textContent = l.lesson_title;
+
+    const tabs = document.getElementById('preview-tabs');
+    const body = document.getElementById('preview-body');
+    tabs.innerHTML = '';
+    body.innerHTML = '';
+
+    const hasVideo = !!l.vimeo_id;
+    const pdfs     = l.pdf_url ? l.pdf_url.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+    if (!hasVideo && !pdfs.length) {
+        body.innerHTML = '<div class="empty-state">ไม่มีเนื้อหาให้ดูตัวอย่าง</div>';
+        document.getElementById('preview-modal').style.display = 'flex';
+        return;
+    }
+
+    const sections = [];
+    if (hasVideo)    sections.push({ label: '🎬 วิดีโอ', type: 'video', src: getVideoEmbedUrl(l.vimeo_id) });
+    pdfs.forEach((url, i) => sections.push({ label: `📄 PDF${pdfs.length > 1 ? ' '+(i+1) : ''}`, type: 'pdf', src: getPdfEmbedUrl(url), rawUrl: url }));
+
+    if (sections.length > 1) {
+        tabs.innerHTML = sections.map((s, i) =>
+            `<button class="preview-tab ${i===0?'active':''}" onclick="switchPreviewTab(${i})">${s.label}</button>`
+        ).join('');
+    }
+
+    function renderSection(s) {
+        if (s.type === 'video') {
+            return `<iframe src="${s.src}" class="preview-iframe" allow="autoplay; fullscreen" allowfullscreen></iframe>`;
+        } else {
+            return `
+            <div style="text-align:right;margin-bottom:8px;">
+                <a href="${s.rawUrl}" target="_blank" class="btn btn-ghost" style="width:auto;font-size:12px;padding:6px 14px;">เปิดในแท็บใหม่ ↗</a>
+            </div>
+            <iframe src="${s.src}" class="preview-iframe preview-pdf"></iframe>`;
+        }
+    }
+
+    body.innerHTML = sections.map((s, i) =>
+        `<div class="preview-section ${i===0?'active':''}" data-idx="${i}">${renderSection(s)}</div>`
+    ).join('');
+
+    document.getElementById('preview-modal').style.display = 'flex';
+}
+
+function switchPreviewTab(idx) {
+    document.querySelectorAll('.preview-tab').forEach((t, i) => t.classList.toggle('active', i === idx));
+    document.querySelectorAll('.preview-section').forEach((s, i) => s.classList.toggle('active', i === idx));
+}
+
+function closePreviewModal() {
+    document.getElementById('preview-modal').style.display = 'none';
+    document.getElementById('preview-body').innerHTML = '';
+}
+
+function getVideoEmbedUrl(videoId) {
+    if (!videoId) return null;
+    if (/^\d+$/.test(videoId.trim())) {
+        return `https://player.vimeo.com/video/${videoId.trim()}`;
+    }
+    return `https://www.youtube.com/embed/${videoId.trim()}`;
+}
+
+function getPdfEmbedUrl(url) {
+    if (!url) return null;
+    const driveMatch = url.match(/drive\.google\.com\/file\/d\/([^/?\s]+)/);
+    if (driveMatch) return `https://drive.google.com/file/d/${driveMatch[1]}/preview`;
+    return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
+}
+
+// ==============================
+// DRAG & DROP — LESSONS
+// ==============================
+function attachDragListeners() {
+    const container = document.getElementById('lesson-list');
+    if (!container) return;
+
+    container.querySelectorAll('.draggable').forEach(item => {
+        item.addEventListener('dragstart', e => {
+            _dragSrcId = parseInt(item.dataset.id);
+            item.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        });
+
+        item.addEventListener('dragend', () => {
+            item.classList.remove('dragging');
+            container.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        });
+
+        item.addEventListener('dragover', e => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            if (parseInt(item.dataset.id) !== _dragSrcId) {
+                item.classList.add('drag-over');
+            }
+        });
+
+        item.addEventListener('dragleave', () => {
+            item.classList.remove('drag-over');
+        });
+
+        item.addEventListener('drop', async e => {
+            e.preventDefault();
+            item.classList.remove('drag-over');
+            const targetId = parseInt(item.dataset.id);
+            if (!_dragSrcId || _dragSrcId === targetId) return;
+            await reorderLessons(_dragSrcId, targetId);
+            _dragSrcId = null;
+        });
+    });
+}
+
+async function reorderLessons(srcId, tgtId) {
+    const srcIdx = _currentLessons.findIndex(l => l.id === srcId);
+    const tgtIdx = _currentLessons.findIndex(l => l.id === tgtId);
+    if (srcIdx === -1 || tgtIdx === -1) return;
+
+    const newOrder = [..._currentLessons];
+    const [moved]  = newOrder.splice(srcIdx, 1);
+    newOrder.splice(tgtIdx, 0, moved);
+
+    const updates = newOrder.map((l, i) => ({ id: l.id, order_no: i + 1 }));
+    await Promise.all(updates.map(u => sb.from('lessons').update({ order_no: u.order_no }).eq('id', u.id)));
+    await loadLessonList();
 }
 
 // ==============================
@@ -278,12 +661,14 @@ async function addStudent() {
     showMsg(msg,`✅ เพิ่มนักเรียน "${email}" สำเร็จ`,'success');
     ['stu-name','stu-email','stu-password','stu-note'].forEach(id=>{ document.getElementById(id).value=''; });
     await Promise.all([loadStudentList(), loadRecentStudents(), loadStats()]);
+    loadCharts();
 }
 
 async function deleteStudent(id) {
     const { error } = await sb.from('users_courses').delete().eq('id', id);
     if (error) { alert('ลบไม่สำเร็จ: '+error.message); return; }
     await Promise.all([loadStudentList(), loadRecentStudents(), loadStats()]);
+    loadCharts();
 }
 
 // ==============================
@@ -336,10 +721,53 @@ async function saveStudentModal() {
 }
 
 // ==============================
+// FINANCE — DAY PARSING (Smart Monthly)
+// ==============================
+const DAY_OFFSETS = {
+    monday: 0, mon: 0,
+    tuesday: 1, tue: 1,
+    wednesday: 2, wed: 2,
+    thursday: 3, thu: 3,
+    friday: 4, fri: 4,
+    saturday: 5, sat: 5,
+    sunday: 6, sun: 6,
+};
+
+function parseDaysFromCourseName(courseName) {
+    const parts = courseName.toLowerCase().split(/[_\-\s]+/);
+    const found = [];
+    for (const part of parts) {
+        if (DAY_OFFSETS.hasOwnProperty(part) && !found.includes(DAY_OFFSETS[part])) {
+            found.push(DAY_OFFSETS[part]);
+        }
+    }
+    return found.sort((a, b) => a - b);
+}
+
+function attributeSessionFee(session) {
+    // Returns array of { month: 'YYYY-MM', amount }
+    const days = parseDaysFromCourseName(session.course_name);
+    const fee  = session.fee || 0;
+
+    if (days.length === 0) {
+        // No day info → attribute full fee to week_start month
+        return [{ month: session.week_start.substring(0, 7), amount: fee }];
+    }
+
+    const weekStart = new Date(session.week_start + 'T00:00:00');
+    const perDay    = fee / days.length;
+
+    return days.map(offset => {
+        const d = new Date(weekStart);
+        d.setDate(d.getDate() + offset);
+        const month = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        return { month, amount: perDay };
+    });
+}
+
+// ==============================
 // FINANCE — WEEK HELPERS
 // ==============================
-let _currentWeekStart = getWeekStart(new Date());
-
 function getWeekStart(date) {
     const d = new Date(date);
     const day = d.getDay();
@@ -352,9 +780,8 @@ function getWeekStart(date) {
 function formatWeekLabel(weekStart) {
     const end = new Date(weekStart);
     end.setDate(end.getDate() + 6);
-    const opts = { day:'numeric', month:'long' };
+    const opts     = { day:'numeric', month:'long' };
     const optsFull = { day:'numeric', month:'long', year:'numeric' };
-    // ถ้าปีเดียวกัน แสดงปีแค่ท้าย
     const startStr = weekStart.toLocaleDateString('th-TH', opts);
     const endStr   = end.toLocaleDateString('th-TH', optsFull);
     return `${startStr} — ${endStr}`;
@@ -410,7 +837,6 @@ async function loadWeekSessions() {
 
     const lastFeeMap = await getLastFeeMap(weekStr);
 
-    // สร้าง sessions ที่ยังไม่มีสัปดาห์นี้
     const toInsert = courses.filter(c => !sessionMap[c.name]).map(c => ({
         course_name: c.name,
         week_start:  weekStr,
@@ -430,7 +856,6 @@ async function loadWeekSessions() {
 }
 
 async function getLastFeeMap(excludeWeek) {
-    // ดึง fee ล่าสุดของแต่ละ course (ไม่รวมสัปดาห์ปัจจุบัน เพื่อดึง default จากอดีต)
     const { data } = await sb.from('weekly_sessions').select('course_name,fee,week_start').order('week_start',{ascending:false});
     const map = {};
     (data||[]).forEach(s => {
@@ -466,7 +891,6 @@ function renderSessionList(sessions) {
 
 async function toggleSession(id, field, value) {
     const update = { [field]: value };
-    // ถ้ายกเลิก "สอนแล้ว" → ยกเลิก "จ่ายแล้ว" ด้วย
     if (field === 'taught' && !value) update.paid = false;
     const { error } = await sb.from('weekly_sessions').update(update).eq('id', id);
     if (error) { alert('อัปเดตไม่สำเร็จ: '+error.message); return; }
@@ -517,88 +941,96 @@ async function saveFee(courseName) {
 }
 
 // ==============================
-// MONTHLY SUMMARY
+// MONTHLY SUMMARY (Smart — แยกตามวันที่สอนจริง)
 // ==============================
 async function loadMonthlySummary() {
     const picker = document.getElementById('month-picker');
     if (!picker?.value) return;
     const [year, month] = picker.value.split('-').map(Number);
+    const targetMonth   = `${year}-${String(month).padStart(2,'0')}`;
 
-    // ช่วงวันแรก - วันสุดท้ายของเดือน (ตัดตาม week_start จริงๆ)
-    const startStr = `${year}-${String(month).padStart(2,'0')}-01`;
-    const endStr   = new Date(year, month, 0).toISOString().split('T')[0];
+    // Fetch with buffer: 6 days before month start (catch weeks that started in prev month)
+    const fetchFrom = new Date(year, month - 1, 1);
+    fetchFrom.setDate(fetchFrom.getDate() - 6);
+    const fetchTo   = new Date(year, month, 0); // last day of month
 
     const { data } = await sb.from('weekly_sessions')
         .select('*')
-        .gte('week_start', startStr)
-        .lte('week_start', endStr)
+        .gte('week_start', fetchFrom.toISOString().split('T')[0])
+        .lte('week_start', fetchTo.toISOString().split('T')[0])
         .order('week_start');
 
     const el = document.getElementById('month-summary');
-    if (!data?.length) {
+
+    const byCourse = {};
+    let grandTotal = 0, grandReceived = 0, grandSessions = 0;
+
+    for (const session of (data || [])) {
+        if (!session.taught) continue;
+
+        const attrs     = attributeSessionFee(session);
+        const relevant  = attrs.filter(a => a.month === targetMonth);
+        if (!relevant.length) continue;
+
+        const portion   = relevant.reduce((sum, a) => sum + a.amount, 0);
+        const received  = session.paid ? portion : 0;
+
+        if (!byCourse[session.course_name]) {
+            byCourse[session.course_name] = { total: 0, received: 0, count: 0 };
+        }
+        byCourse[session.course_name].total    += portion;
+        byCourse[session.course_name].received += received;
+        byCourse[session.course_name].count    += 1;
+
+        grandTotal    += portion;
+        grandReceived += received;
+        grandSessions += 1;
+    }
+
+    const grandPending = grandTotal - grandReceived;
+    const courseNames  = Object.keys(byCourse).sort();
+
+    if (!courseNames.length) {
         el.innerHTML = '<div class="month-empty">ไม่มีข้อมูลเดือนนี้</div>';
         return;
     }
 
-    // แยกกลุ่มตาม course_name
-    const byCourse = {};
-    const allCourseNames = [...new Set(data.map(s => s.course_name))].sort();
-
-    allCourseNames.forEach(name => {
-        const rows       = data.filter(s => s.course_name === name);
-        const taughtRows = rows.filter(s => s.taught); // เฉพาะที่สอนจริง
-        byCourse[name] = {
-            total:    taughtRows.reduce((a,s) => a + (s.fee||0), 0),
-            received: taughtRows.filter(s => s.paid).reduce((a,s) => a + (s.fee||0), 0),
-            taught:   taughtRows.length,
-            sessions: rows.length,
-        };
-    });
-
-    // ยอดรวมเฉพาะที่สอนจริง
-    const taughtData    = data.filter(s => s.taught);
-    const grandTotal    = taughtData.reduce((a,s) => a+(s.fee||0), 0);
-    const grandReceived = taughtData.filter(s=>s.paid).reduce((a,s) => a+(s.fee||0), 0);
-    const grandPending  = grandTotal - grandReceived;
-    const taughtCount   = taughtData.length;
-
-    // --- สรุป top ---
     let html = `
     <div class="ms-top-row">
         <div class="ms-kpi">
-            <span class="ms-kpi-val">฿${grandTotal.toLocaleString()}</span>
+            <span class="ms-kpi-val">฿${Math.round(grandTotal).toLocaleString()}</span>
             <span class="ms-kpi-label">รวมควรได้รับ</span>
         </div>
         <div class="ms-kpi success">
-            <span class="ms-kpi-val">฿${grandReceived.toLocaleString()}</span>
+            <span class="ms-kpi-val">฿${Math.round(grandReceived).toLocaleString()}</span>
             <span class="ms-kpi-label">ได้รับแล้ว</span>
         </div>
         <div class="ms-kpi ${grandPending > 0 ? 'warn' : 'success'}">
-            <span class="ms-kpi-val">฿${grandPending.toLocaleString()}</span>
+            <span class="ms-kpi-val">฿${Math.round(grandPending).toLocaleString()}</span>
             <span class="ms-kpi-label">ค้างจ่าย</span>
         </div>
     </div>
     <div class="ms-taught-row">
-        <span class="ms-taught-badge">สอนแล้ว ${taughtCount} ครั้ง จาก ${data.length} กลุ่ม/สัปดาห์</span>
+        <span class="ms-taught-badge">สอนแล้ว ${grandSessions} ครั้ง (เฉพาะส่วนที่นับในเดือนนี้)</span>
     </div>
     <div class="ms-course-grid">`;
 
-    allCourseNames.forEach(name => {
-        const c = byCourse[name];
+    courseNames.forEach(name => {
+        const c   = byCourse[name];
         const pct = c.total > 0 ? Math.round((c.received / c.total) * 100) : 0;
         const isPaid = c.received >= c.total && c.total > 0;
         html += `
         <div class="ms-course-card ${isPaid ? 'ms-paid' : ''}">
             <div class="ms-course-header">
                 <span class="ms-course-name">${name}</span>
-                <span class="ms-course-sessions">${c.taught} ครั้ง</span>
+                <span class="ms-course-sessions">${c.count} ครั้ง</span>
             </div>
             <div class="ms-progress-bar">
                 <div class="ms-progress-fill" style="width:${pct}%"></div>
             </div>
             <div class="ms-course-amounts">
-                <span class="ms-amt-received">฿${c.received.toLocaleString()}</span>
-                <span class="ms-amt-total">/ ฿${c.total.toLocaleString()}</span>
+                <span class="ms-amt-received">฿${Math.round(c.received).toLocaleString()}</span>
+                <span class="ms-amt-total">/ ฿${Math.round(c.total).toLocaleString()}</span>
             </div>
         </div>`;
     });
@@ -610,7 +1042,6 @@ async function loadMonthlySummary() {
 // ==============================
 // CONFIRM MODAL
 // ==============================
-let _pendingAction = null;
 function confirmDelete(message, action) {
     _pendingAction = action;
     document.getElementById('modal-msg').innerHTML = message;
