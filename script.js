@@ -2,6 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const SUPABASE_URL = 'https://zbekvirvhahjtocnitaq.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpiZWt2aXJ2aGFoanRvY25pdGFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMDgzMDMsImV4cCI6MjA5MDY4NDMwM30.rM07BjG64N_jKrWcIcGovb5xtHPiPGFWKvvV2A_i9Ts';
+    const STORAGE_KEY = 'math_student_v1';
 
     if (typeof window.supabase === 'undefined') {
         console.error('Supabase library ยังไม่โหลด');
@@ -11,17 +12,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const { createClient } = window.supabase;
     const _sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    // เก็บ lessons ทั้งหมดไว้ใช้กับ search
-    let _allLessons = [];
+    let _allLessons      = [];
+    let _filteredLessons = [];
+    let _courseNames     = [];
+    let _activeCourse    = 'all';
+    let _currentLessonId = null;
+    let _sidebarOpen     = true;
+
+    // ==============================
+    // SESSION RESTORE
+    // ==============================
+    const _saved = (() => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch { return null; } })();
+    if (_saved?.email && _saved?.password) {
+        doLogin(_saved.email, _saved.password, _saved.currentLessonId || null);
+    }
 
     // ==============================
     // LOGIN
     // ==============================
     const loginBtn = document.getElementById('login-btn');
-    const btnText   = document.getElementById('btn-text');
+    const btnText  = document.getElementById('btn-text');
     const btnLoader = document.getElementById('btn-loader');
 
-    loginBtn.addEventListener('click', doLogin);
+    loginBtn.addEventListener('click', () => doLogin());
 
     document.addEventListener('keydown', e => {
         if (e.key === 'Enter') {
@@ -30,96 +43,150 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    async function doLogin() {
+    async function doLogin(savedEmail, savedPassword, restoreLessonId) {
         const emailEl  = document.getElementById('email');
         const passEl   = document.getElementById('password');
         const errorMsg = document.getElementById('error-msg');
-        if (!emailEl || !passEl) return;
 
-        // ✅ แปลง email เป็น lowercase ทั้งหมดก่อน query
-        const email    = emailEl.value.trim().toLowerCase();
-        const password = passEl.value.trim();
-        errorMsg.innerText = '';
+        const email    = savedEmail    || (emailEl?.value.trim().toLowerCase());
+        const password = savedPassword || (passEl?.value.trim());
+
+        if (errorMsg) errorMsg.innerText = '';
 
         if (!email || !password) {
-            errorMsg.innerText = 'กรุณากรอกข้อมูลให้ครบ';
+            if (errorMsg) errorMsg.innerText = 'กรุณากรอกข้อมูลให้ครบ';
             return;
         }
 
         setLoading(true);
 
         try {
-            const { data: userRows, error: authError } = await _sb
+            const { data: userRows, error } = await _sb
                 .from('users_courses')
                 .select('*')
                 .eq('email', email)
                 .eq('password', password);
 
-            if (authError || !userRows || userRows.length === 0) {
-                errorMsg.innerText = 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
+            if (error || !userRows || userRows.length === 0) {
+                localStorage.removeItem(STORAGE_KEY);
+                if (errorMsg) errorMsg.innerText = 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
                 setLoading(false);
                 return;
             }
 
-            const courseNames = [...new Set(userRows.map(r => r.course_name))];
+            _courseNames = [...new Set(userRows.map(r => r.course_name))];
 
             const { data: lessons, error: lessonError } = await _sb
                 .from('lessons')
                 .select('*')
-                .in('course_name', courseNames)
+                .in('course_name', _courseNames)
                 .order('course_name', { ascending: true })
                 .order('order_no',    { ascending: true });
 
             if (lessonError) {
-                errorMsg.innerText = 'ดึงข้อมูลบทเรียนล้มเหลว: ' + lessonError.message;
+                if (errorMsg) errorMsg.innerText = 'ดึงข้อมูลบทเรียนล้มเหลว: ' + lessonError.message;
                 setLoading(false);
-            } else {
-                _allLessons = lessons || [];
-                showCoursePage(userRows[0], _allLessons, courseNames);
+                return;
             }
+
+            _allLessons = lessons || [];
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({ email, password, currentLessonId: restoreLessonId || null }));
+            showCoursePage(_allLessons, _courseNames, restoreLessonId);
+
         } catch (err) {
-            errorMsg.innerText = 'ข้อผิดพลาด: ' + err.message;
+            if (errorMsg) errorMsg.innerText = 'ข้อผิดพลาด: ' + err.message;
             setLoading(false);
         }
     }
 
     function setLoading(on) {
-        loginBtn.disabled       = on;
-        btnText.style.display   = on ? 'none'   : 'inline';
-        btnLoader.style.display = on ? 'inline' : 'none';
+        if (loginBtn)  loginBtn.disabled        = on;
+        if (btnText)   btnText.style.display    = on ? 'none'   : 'inline';
+        if (btnLoader) btnLoader.style.display  = on ? 'inline' : 'none';
     }
 
     // ==============================
     // COURSE PAGE
     // ==============================
-    function showCoursePage(userData, lessons, courseNames) {
+    function showCoursePage(lessons, courseNames, restoreLessonId) {
         document.getElementById('login-section').style.display = 'none';
         document.getElementById('video-section').style.display = 'block';
 
         const hasMulti = courseNames.length > 1;
         document.getElementById('course-title').innerText = hasMulti
-            ? 'คอร์สของฉัน (' + courseNames.length + ' คอร์ส)'
+            ? `คอร์สของฉัน (${courseNames.length} คอร์ส)`
             : courseNames[0];
 
-        renderPlaylist(lessons, courseNames);
+        if (hasMulti) renderCourseTabs(courseNames);
 
-        if (lessons.length > 0) {
-            selectLesson(lessons[0]);
+        _activeCourse    = 'all';
+        _filteredLessons = [...lessons];
+        renderPlaylist();
+
+        let startLesson = lessons[0];
+        if (restoreLessonId) {
+            const found = lessons.find(l => String(l.id) === String(restoreLessonId));
+            if (found) startLesson = found;
+        }
+
+        if (startLesson) {
+            selectLesson(startLesson, false);
         } else {
             document.getElementById('main-display').innerHTML =
                 '<div class="no-content">ไม่พบบทเรียน</div>';
         }
+
+        setupKeyboard();
+        setupSwipe();
+        setupSidebarToggle();
+
+        // hide keyboard hint on mobile
+        if (window.innerWidth <= 640) {
+            const hint = document.getElementById('keyboard-hint');
+            if (hint) hint.style.display = 'none';
+        }
     }
+
+    // ==============================
+    // COURSE TABS
+    // ==============================
+    function renderCourseTabs(courseNames) {
+        const tabsEl = document.getElementById('course-tabs');
+        tabsEl.style.display = 'flex';
+        let html = `<button class="course-tab active" data-course="all" onclick="window._selectCourse('all')">ทั้งหมด</button>`;
+        courseNames.forEach(name => {
+            html += `<button class="course-tab" data-course="${escAttr(name)}" onclick="window._selectCourse('${escAttr(name)}')">${name}</button>`;
+        });
+        tabsEl.innerHTML = html;
+    }
+
+    window._selectCourse = function(course) {
+        _activeCourse    = course;
+        _filteredLessons = course === 'all'
+            ? [..._allLessons]
+            : _allLessons.filter(l => l.course_name === course);
+
+        document.querySelectorAll('.course-tab').forEach(el => {
+            el.classList.toggle('active', el.dataset.course === course);
+        });
+
+        renderPlaylist();
+
+        if (_filteredLessons.length > 0) {
+            selectLesson(_filteredLessons[0], false);
+        }
+    };
 
     // ==============================
     // RENDER PLAYLIST
     // ==============================
-    function renderPlaylist(lessons, courseNames) {
+    function renderPlaylist() {
         const container = document.getElementById('playlist');
-        const hasMulti  = courseNames && courseNames.length > 1;
+        const hasMulti  = _courseNames.length > 1 && _activeCourse === 'all';
 
-        if (!lessons.length) {
+        if (!_filteredLessons.length) {
             container.innerHTML = '<div class="playlist-empty">ไม่พบบทเรียน</div>';
+            updateCounter(0, 0);
             return;
         }
 
@@ -127,7 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let currentCourse = '';
         let currentTopic  = '';
 
-        lessons.forEach((item, idx) => {
+        _filteredLessons.forEach((item, idx) => {
             if (hasMulti && item.course_name !== currentCourse) {
                 currentCourse = item.course_name;
                 currentTopic  = '';
@@ -140,15 +207,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const hasVideo = item.vimeo_id && item.vimeo_id.trim() !== '';
             const hasPdf   = item.pdf_url  && item.pdf_url.trim()  !== '' && item.pdf_url !== 'null';
-            const badge    = hasVideo && hasPdf ? 'both'
-                           : hasVideo           ? 'video'
-                           :                      'pdf';
-            const badgeLabel = badge === 'both' ? 'วิดีโอ+PDF'
-                             : badge === 'video' ? 'วิดีโอ'
-                             :                     'PDF';
+            const badge    = hasVideo && hasPdf ? 'both' : hasVideo ? 'video' : 'pdf';
+            const badgeLabel = badge === 'both' ? 'วิดีโอ+PDF' : badge === 'video' ? 'วิดีโอ' : 'PDF';
+            const isActive = String(item.id) === String(_currentLessonId);
 
             html += `
-                <div class="playlist-item" data-idx="${idx}"
+                <div class="playlist-item${isActive ? ' active' : ''}" data-idx="${idx}" data-id="${item.id}"
                     data-title="${escAttr(item.lesson_title)}"
                     data-topic="${escAttr(item.topic_name || '')}"
                     onclick="window._selectByIdx(${idx})">
@@ -161,26 +225,32 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         container.innerHTML = html;
-        updateCounter(lessons.length, lessons.length);
+        updateCounter(_filteredLessons.length, _filteredLessons.length);
     }
 
     // ==============================
     // SELECT LESSON
     // ==============================
-    function selectLesson(lesson) {
-        // highlight ใน playlist
+    function selectLesson(lesson, autoplay) {
+        _currentLessonId = lesson.id;
+
+        // save current lesson to localStorage
+        const curr = (() => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; } })();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...curr, currentLessonId: lesson.id }));
+
+        // highlight playlist
         document.querySelectorAll('.playlist-item').forEach(el => {
-            el.classList.toggle('active', parseInt(el.dataset.idx) === _allLessons.indexOf(lesson));
+            el.classList.toggle('active', String(el.dataset.id) === String(lesson.id));
         });
+        const activeItem = document.querySelector('.playlist-item.active');
+        if (activeItem) activeItem.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 
         const hasVideo = lesson.vimeo_id && lesson.vimeo_id.trim() !== '';
         const hasPdf   = lesson.pdf_url  && lesson.pdf_url.trim()  !== '' && lesson.pdf_url !== 'null';
-
-        const display = document.getElementById('main-display');
+        const display  = document.getElementById('main-display');
 
         if (hasVideo) {
-            // แสดง video player
-            const src = resolveVideoSrc(lesson.vimeo_id, false);
+            const src = resolveVideoSrc(lesson.vimeo_id, autoplay);
             display.innerHTML = `
                 <div class="video-container">
                     <iframe id="main-player" src="${src}"
@@ -193,7 +263,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${lesson.topic_name ? `<span class="lesson-info-topic">${lesson.topic_name}</span>` : ''}
                 </div>`;
         } else {
-            // PDF อย่างเดียว — แสดง card แทน
             display.innerHTML = `
                 <div class="pdf-only-header">
                     <div class="pdf-only-icon">📄</div>
@@ -204,24 +273,130 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>`;
         }
 
-        // render PDF buttons
         renderPdfs(lesson.pdf_url || '', hasPdf);
+        updateNavButtons();
+
+        // close mobile sidebar after selecting
+        if (window.innerWidth <= 640) closeMobileSidebar();
     }
 
-    // global เพื่อให้ onclick ใน HTML เรียกได้
     window._selectByIdx = function(idx) {
-        const lesson = _allLessons[idx];
+        const lesson = _filteredLessons[idx];
         if (!lesson) return;
-        selectLesson(lesson);
-        // autoplay เมื่อเปลี่ยนคลิป
-        if (lesson.vimeo_id && lesson.vimeo_id.trim() !== '') {
-            setTimeout(() => {
-                const iframe = document.getElementById('main-player');
-                if (iframe) iframe.src = resolveVideoSrc(lesson.vimeo_id, true);
-            }, 50);
-        }
-        // บนมือถือ scroll ขึ้นไปดู player
+        selectLesson(lesson, true);
         document.getElementById('main-display')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    // ==============================
+    // PREV / NEXT
+    // ==============================
+    function getCurrentIdx() {
+        return _filteredLessons.findIndex(l => String(l.id) === String(_currentLessonId));
+    }
+
+    function updateNavButtons() {
+        const idx        = getCurrentIdx();
+        const prevBtn    = document.getElementById('prev-btn');
+        const nextBtn    = document.getElementById('next-btn');
+        const navCounter = document.getElementById('nav-counter');
+
+        if (prevBtn)    prevBtn.disabled    = idx <= 0;
+        if (nextBtn)    nextBtn.disabled    = idx >= _filteredLessons.length - 1;
+        if (navCounter && _filteredLessons.length > 0) {
+            navCounter.textContent = `${idx + 1} / ${_filteredLessons.length}`;
+        }
+    }
+
+    window.goPrev = function() {
+        const idx = getCurrentIdx();
+        if (idx > 0) {
+            selectLesson(_filteredLessons[idx - 1], true);
+            document.getElementById('main-display')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    };
+
+    window.goNext = function() {
+        const idx = getCurrentIdx();
+        if (idx < _filteredLessons.length - 1) {
+            selectLesson(_filteredLessons[idx + 1], true);
+            document.getElementById('main-display')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    };
+
+    // ==============================
+    // KEYBOARD SHORTCUTS
+    // ==============================
+    function setupKeyboard() {
+        document.addEventListener('keydown', e => {
+            if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+            if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                e.preventDefault();
+                window.goNext();
+            } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                window.goPrev();
+            }
+        });
+    }
+
+    // ==============================
+    // SWIPE (mobile)
+    // ==============================
+    let _touchStartX = 0;
+    let _touchStartY = 0;
+
+    function setupSwipe() {
+        const playerArea = document.querySelector('.player-area');
+        if (!playerArea || playerArea._swipeInit) return;
+        playerArea._swipeInit = true;
+
+        playerArea.addEventListener('touchstart', e => {
+            _touchStartX = e.touches[0].clientX;
+            _touchStartY = e.touches[0].clientY;
+        }, { passive: true });
+
+        playerArea.addEventListener('touchend', e => {
+            const dx = _touchStartX - e.changedTouches[0].clientX;
+            const dy = Math.abs(_touchStartY - e.changedTouches[0].clientY);
+            if (Math.abs(dx) > 60 && Math.abs(dx) > dy * 1.5) {
+                if (dx > 0) window.goNext();
+                else        window.goPrev();
+            }
+        }, { passive: true });
+    }
+
+    // ==============================
+    // SIDEBAR TOGGLE (desktop)
+    // ==============================
+    function setupSidebarToggle() {
+        const btn = document.getElementById('sidebar-toggle-btn');
+        if (!btn) return;
+        btn.addEventListener('click', () => {
+            const layout = document.getElementById('split-layout');
+            _sidebarOpen = !_sidebarOpen;
+            layout.classList.toggle('sidebar-hidden', !_sidebarOpen);
+            btn.textContent = _sidebarOpen ? '☰' : '▶';
+        });
+    }
+
+    // ==============================
+    // MOBILE SIDEBAR
+    // ==============================
+    window.toggleMobileSidebar = function() {
+        const sidebar   = document.getElementById('sidebar');
+        const backdrop  = document.getElementById('sidebar-backdrop');
+        const isOpen    = sidebar.classList.contains('mobile-open');
+        if (isOpen) {
+            closeMobileSidebar();
+        } else {
+            sidebar.classList.add('mobile-open');
+            backdrop.classList.add('active');
+        }
+    };
+
+    window.closeMobileSidebar = function() {
+        document.getElementById('sidebar')?.classList.remove('mobile-open');
+        document.getElementById('sidebar-backdrop')?.classList.remove('active');
     };
 
     // ==============================
@@ -236,7 +411,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!entries.length) return;
 
         entries.forEach(entry => {
-            // format: "ชื่อ|https://..." หรือ "https://..." อย่างเดียว
             let label = '';
             let url   = entry;
 
@@ -245,27 +419,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 label = parts[0].trim();
                 url   = parts.slice(1).join('|').trim();
             }
-
-            // ถ้าไม่มีชื่อ → ดึงจาก URL
             if (!label) label = extractFilename(url);
 
-            const card = document.createElement('a');
-            card.href        = url;
-            card.target      = '_blank';
-            card.rel         = 'noopener noreferrer';
-            card.className   = 'pdf-card';
-            card.innerHTML   = `
+            const downloadUrl = getDownloadUrl(url);
+
+            const card = document.createElement('div');
+            card.className = 'pdf-card';
+            card.innerHTML = `
                 <div class="pdf-card-icon">📄</div>
                 <div class="pdf-card-info">
                     <span class="pdf-card-name">${label}</span>
-                    <span class="pdf-card-sub">เปิดเอกสาร</span>
+                    <span class="pdf-card-sub">เอกสารประกอบการเรียน</span>
                 </div>
-                <div class="pdf-card-arrow">→</div>`;
+                <div class="pdf-card-actions">
+                    <a href="${url}" target="_blank" rel="noopener noreferrer" class="pdf-btn pdf-btn-open">เปิด</a>
+                    <a href="${downloadUrl}" download target="_blank" rel="noopener noreferrer" class="pdf-btn pdf-btn-dl" title="ดาวน์โหลด">⬇</a>
+                </div>`;
             container.appendChild(card);
         });
     }
 
-    // ดึงชื่อไฟล์จาก URL
+    function getDownloadUrl(url) {
+        const driveMatch = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+        if (driveMatch) return `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
+        return url;
+    }
+
     function extractFilename(url) {
         try {
             const pathname = new URL(url).pathname;
@@ -280,7 +459,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // PLAYLIST SEARCH
     // ==============================
     window.filterPlaylist = function() {
-        const q = (document.getElementById('playlist-search')?.value || '').toLowerCase().trim();
+        const q     = (document.getElementById('playlist-search')?.value || '').toLowerCase().trim();
         const items = document.querySelectorAll('.playlist-item');
         let visible = 0;
 
@@ -292,7 +471,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (match) visible++;
         });
 
-        // ซ่อน topic header ถ้า item ใน group นั้นหายหมด
         document.querySelectorAll('.playlist-topic, .playlist-course-header').forEach(header => {
             let next = header.nextElementSibling;
             let hasVisible = false;
@@ -306,7 +484,7 @@ document.addEventListener('DOMContentLoaded', () => {
             header.style.display = hasVisible ? '' : 'none';
         });
 
-        updateCounter(visible, _allLessons.length);
+        updateCounter(visible, _filteredLessons.length);
     };
 
     function updateCounter(visible, total) {
@@ -335,6 +513,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==============================
     // LOGOUT
     // ==============================
-    document.getElementById('logout-btn').addEventListener('click', () => location.reload());
-
-}); // end DOMContentLoaded
+    document.getElementById('logout-btn').addEventListener('click', () => {
+        localStorage.removeItem(STORAGE_KEY);
+        location.reload();
+    });
+});

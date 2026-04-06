@@ -30,23 +30,38 @@
 
         <!-- Top bar -->
         <div class="topbar">
-            <span class="topbar-title" id="course-title">ยินดีต้อนรับ</span>
-            <button id="logout-btn" class="logout-btn">🚪 ออกจากระบบ</button>
+            <div class="topbar-left">
+                <button id="sidebar-toggle-btn" class="sidebar-toggle-btn" title="ซ่อน/แสดง playlist">☰</button>
+                <span class="topbar-title" id="course-title">ยินดีต้อนรับ</span>
+            </div>
+            <div class="topbar-right">
+                <span id="keyboard-hint" class="keyboard-hint">← → เปลี่ยนบทเรียน</span>
+                <button id="logout-btn" class="logout-btn">🚪 ออกจากระบบ</button>
+            </div>
         </div>
 
-        <!-- Split layout -->
-        <div class="split-layout">
+        <!-- Course tabs (shown if multiple courses) -->
+        <div id="course-tabs" class="course-tabs" style="display:none;"></div>
 
-            <!-- Left: player + PDF -->
+        <!-- Split layout -->
+        <div class="split-layout" id="split-layout">
+
+            <!-- Left: player + nav + PDF -->
             <div class="player-area">
-                <div id="main-display">
-                    <!-- จะถูก inject โดย JS -->
+                <div id="main-display"></div>
+
+                <!-- Prev / Next -->
+                <div class="lesson-nav">
+                    <button id="prev-btn" class="nav-btn" onclick="goPrev()">← ก่อนหน้า</button>
+                    <span id="nav-counter" class="nav-counter"></span>
+                    <button id="next-btn" class="nav-btn nav-btn-next" onclick="goNext()">ถัดไป →</button>
                 </div>
+
                 <div id="pdf-container"></div>
             </div>
 
             <!-- Right: playlist -->
-            <div class="sidebar">
+            <div class="sidebar" id="sidebar">
                 <div class="sidebar-search-wrap">
                     <input type="text" id="playlist-search" placeholder="🔍 ค้นหาบทเรียน..." oninput="filterPlaylist()">
                 </div>
@@ -56,6 +71,12 @@
 
         </div>
     </div>
+
+    <!-- Mobile backdrop -->
+    <div id="sidebar-backdrop" class="sidebar-backdrop" onclick="closeMobileSidebar()"></div>
+
+    <!-- Floating playlist button (mobile) -->
+    <button id="fab-playlist" class="fab-btn" onclick="toggleMobileSidebar()">📋 บทเรียน</button>
 
     <script src="script.js"></script>
 </body>
