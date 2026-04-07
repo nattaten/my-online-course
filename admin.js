@@ -57,15 +57,28 @@ document.addEventListener('DOMContentLoaded', () => {
         mp.addEventListener('change', loadMonthlySummary);
     }
 
-    ['confirm-modal','edit-student-modal','edit-lesson-modal','preview-modal'].forEach(id => {
+    ['confirm-modal','edit-student-modal','edit-lesson-modal','preview-modal','duplicate-modal'].forEach(id => {
         document.getElementById(id)?.addEventListener('click', e => {
             if (e.target.id === id) {
                 if (id === 'confirm-modal')       closeModal();
                 else if (id === 'edit-student-modal') closeEditStudentModal();
                 else if (id === 'edit-lesson-modal')  closeEditLessonModal();
                 else if (id === 'preview-modal')      closePreviewModal();
+                else if (id === 'duplicate-modal')    closeDuplicateModal();
             }
         });
+    });
+
+    // Global search keyboard shortcut
+    document.addEventListener('keydown', e => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+            e.preventDefault();
+            openSearchOverlay();
+        }
+        if (e.key === 'Escape') {
+            closeSearchOverlay();
+            closeStudentDetailModal();
+        }
     });
 });
 
@@ -110,6 +123,7 @@ async function initDashboard() {
         initFinance(),
     ]);
     loadCharts();
+    loadUnpaidAlert();
 }
 
 // ==============================
@@ -327,6 +341,7 @@ async function loadCourseList() {
                 <div class="list-item-name">📚 ${c.name}</div>
                 <div class="list-item-sub">ID: ${c.id}</div>
             </div>
+            <button class="icon-btn" title="ก็อปปี้คอร์ส" onclick="openDuplicateCourse(${c.id},'${c.name.replace(/'/g,"\\'")}')">📋</button>
             <button class="icon-btn delete" onclick="confirmDelete('ลบคอร์ส &quot;${c.name}&quot;?', ()=>deleteCourse(${c.id}))">🗑</button>
         </div>`).join('');
 }
@@ -635,12 +650,13 @@ async function loadStudentList() {
     if (!filtered.length) { el.innerHTML = '<div class="empty-state">ไม่พบนักเรียนที่ค้นหา</div>'; return; }
     el.innerHTML = filtered.map(s=>`
         <div class="list-item">
-            <div class="list-item-info">
+            <div class="list-item-info" style="cursor:pointer;" onclick='openStudentDetailModal(${JSON.stringify(s)})' title="ดูประวัติ">
                 <div class="list-item-name">👤 ${s.name||'(ไม่ระบุชื่อ)'}</div>
                 <div class="list-item-sub">${s.email}</div>
                 ${s.note?`<div class="list-item-sub">${s.note}</div>`:''}
             </div>
             <span class="badge badge-blue">${s.course_name}</span>
+            <button class="icon-btn" title="ดูประวัติ" onclick='openStudentDetailModal(${JSON.stringify(s)})'>👁</button>
             <button class="icon-btn edit" onclick='openEditStudentModal(${JSON.stringify(s)})'>✏️</button>
             <button class="icon-btn delete" onclick="confirmDelete('ลบนักเรียน &quot;${s.email}&quot;?', ()=>deleteStudent(${s.id}))">🗑</button>
         </div>`).join('');
@@ -1058,4 +1074,467 @@ function closeModal() { document.getElementById('confirm-modal').style.display =
 function showMsg(el, text, type) {
     el.textContent = text; el.className = 'form-msg '+type;
     setTimeout(()=>{ el.textContent=''; el.className='form-msg'; }, 4000);
+}
+
+// ==============================
+// FEATURE 1: UNPAID ALERT WIDGET
+// ==============================
+async function loadUnpaidAlert() {
+    const weekStr = getWeekStart(new Date()).toISOString().split('T')[0];
+    const { data } = await sb.from('weekly_sessions')
+        .select('*')
+        .eq('week_start', weekStr)
+        .eq('taught', true)
+        .eq('paid', false);
+
+    const el = document.getElementById('unpaid-alert');
+    const listEl = document.getElementById('unpaid-alert-list');
+    if (!el || !listEl) return;
+
+    if (!data?.length) {
+        el.style.display = 'none';
+        return;
+    }
+
+    document.getElementById('unpaid-alert-title').textContent =
+        `สัปดาห์นี้ยังค้างจ่าย ${data.length} กลุ่ม`;
+
+    listEl.innerHTML = data.map(s => `
+        <div class="unpaid-item" id="unpaid-item-${s.id}">
+            <div class="unpaid-item-info">
+                <span class="unpaid-item-name">${s.course_name}</span>
+                <span class="unpaid-item-fee">฿${(s.fee||0).toLocaleString()}</span>
+            </div>
+            <button class="btn-mark-paid" onclick="quickMarkPaid(${s.id})">✔ จ่ายแล้ว</button>
+        </div>`).join('');
+
+    el.style.display = 'block';
+}
+
+async function quickMarkPaid(sessionId) {
+    const btn = document.querySelector(`#unpaid-item-${sessionId} .btn-mark-paid`);
+    if (btn) { btn.disabled = true; btn.textContent = '...'; }
+    const { error } = await sb.from('weekly_sessions').update({ paid: true }).eq('id', sessionId);
+    if (error) { alert('อัปเดตไม่สำเร็จ: ' + error.message); return; }
+    const item = document.getElementById(`unpaid-item-${sessionId}`);
+    if (item) {
+        item.classList.add('unpaid-item-done');
+        item.innerHTML = `<span style="opacity:.5;font-size:13px;">✅ ${item.querySelector('.unpaid-item-name')?.textContent||''} — จ่ายแล้ว</span>`;
+    }
+    await Promise.all([loadStats(), loadWeekSessions()]);
+    setTimeout(() => loadUnpaidAlert(), 800);
+}
+
+// ==============================
+// FEATURE 2: GLOBAL SEARCH
+// ==============================
+let _searchTimer = null;
+
+function openSearchOverlay() {
+    const overlay = document.getElementById('search-overlay');
+    if (!overlay) return;
+    overlay.style.display = 'flex';
+    const input = document.getElementById('search-input');
+    if (input) { input.value = ''; input.focus(); }
+    document.getElementById('search-results').innerHTML =
+        '<div class="search-empty-hint">พิมพ์เพื่อเริ่มค้นหา...</div>';
+}
+
+function closeSearchOverlay() {
+    const overlay = document.getElementById('search-overlay');
+    if (overlay) overlay.style.display = 'none';
+}
+
+function handleSearchOverlayBg(e) {
+    if (e.target.id === 'search-overlay') closeSearchOverlay();
+}
+
+function runSearch() {
+    clearTimeout(_searchTimer);
+    _searchTimer = setTimeout(doSearch, 200);
+}
+
+async function doSearch() {
+    const q = (document.getElementById('search-input')?.value || '').trim();
+    const resultsEl = document.getElementById('search-results');
+    if (!resultsEl) return;
+
+    if (q.length < 2) {
+        resultsEl.innerHTML = '<div class="search-empty-hint">พิมพ์อย่างน้อย 2 ตัวอักษร...</div>';
+        return;
+    }
+
+    resultsEl.innerHTML = '<div class="search-empty-hint">กำลังค้นหา...</div>';
+
+    const qLower = q.toLowerCase();
+    const [studentsRes, lessonsRes] = await Promise.all([
+        sb.from('users_courses').select('*').order('id', { ascending: false }).limit(200),
+        sb.from('lessons').select('*').order('order_no').limit(300),
+    ]);
+
+    const students = (studentsRes.data || []).filter(s =>
+        (s.name || '').toLowerCase().includes(qLower) ||
+        (s.email || '').toLowerCase().includes(qLower)
+    ).slice(0, 6);
+
+    const lessons = (lessonsRes.data || []).filter(l =>
+        (l.lesson_title || '').toLowerCase().includes(qLower) ||
+        (l.topic_name || '').toLowerCase().includes(qLower) ||
+        (l.course_name || '').toLowerCase().includes(qLower)
+    ).slice(0, 6);
+
+    const courses = _allCourses.filter(c =>
+        c.name.toLowerCase().includes(qLower)
+    ).slice(0, 4);
+
+    if (!students.length && !lessons.length && !courses.length) {
+        resultsEl.innerHTML = `<div class="search-empty-hint">ไม่พบผลลัพธ์สำหรับ "<strong>${q}</strong>"</div>`;
+        return;
+    }
+
+    let html = '';
+
+    if (courses.length) {
+        html += `<div class="search-group-label">📚 คอร์ส</div>`;
+        html += courses.map(c => `
+            <div class="search-result-item" onclick="searchGoTo('courses','${c.name}')">
+                <div class="sri-icon">📚</div>
+                <div class="sri-body">
+                    <div class="sri-title">${highlight(c.name, q)}</div>
+                    <div class="sri-sub">คอร์สเรียน</div>
+                </div>
+            </div>`).join('');
+    }
+
+    if (students.length) {
+        html += `<div class="search-group-label">👤 นักเรียน</div>`;
+        html += students.map(s => `
+            <div class="search-result-item" onclick='searchGoToStudent(${JSON.stringify(s)})'>
+                <div class="sri-icon sri-avatar">${(s.name||s.email||'?')[0].toUpperCase()}</div>
+                <div class="sri-body">
+                    <div class="sri-title">${highlight(s.name || s.email, q)}</div>
+                    <div class="sri-sub">${s.email} · <span class="badge badge-blue" style="font-size:10px;padding:1px 6px;">${s.course_name}</span></div>
+                </div>
+            </div>`).join('');
+    }
+
+    if (lessons.length) {
+        html += `<div class="search-group-label">🎬 บทเรียน</div>`;
+        html += lessons.map(l => `
+            <div class="search-result-item" onclick="searchGoToLesson('${l.course_name}')">
+                <div class="sri-icon">${l.vimeo_id ? '🎬' : '📄'}</div>
+                <div class="sri-body">
+                    <div class="sri-title">${highlight(l.lesson_title, q)}</div>
+                    <div class="sri-sub">${l.course_name} · ${l.topic_name || '—'}</div>
+                </div>
+            </div>`).join('');
+    }
+
+    resultsEl.innerHTML = html;
+}
+
+function highlight(text, query) {
+    if (!text || !query) return text || '';
+    const re = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    return text.replace(re, '<mark>$1</mark>');
+}
+
+function searchGoTo(tab, courseName) {
+    closeSearchOverlay();
+    switchTab(tab);
+    if (courseName) {
+        setTimeout(() => {
+            const sel = document.getElementById('lesson-filter-course');
+            if (sel) { sel.value = courseName; loadLessonList(); }
+        }, 200);
+    }
+}
+
+function searchGoToStudent(student) {
+    closeSearchOverlay();
+    switchTab('students');
+    setTimeout(() => openStudentDetailModal(student), 300);
+}
+
+function searchGoToLesson(courseName) {
+    closeSearchOverlay();
+    switchTab('lessons');
+    setTimeout(() => {
+        const sel = document.getElementById('lesson-filter-course');
+        if (sel) { sel.value = courseName; loadLessonList(); }
+    }, 200);
+}
+
+// ==============================
+// FEATURE 3: STUDENT DETAIL MODAL
+// ==============================
+async function openStudentDetailModal(student) {
+    document.getElementById('detail-modal-title').textContent = student.name || student.email;
+    document.getElementById('student-detail-body').innerHTML =
+        '<div class="detail-loading">กำลังโหลด...</div>';
+    document.getElementById('student-detail-modal').style.display = 'flex';
+
+    const courseName = student.course_name;
+
+    // Fetch last 16 weeks of sessions for this course
+    const since = new Date();
+    since.setDate(since.getDate() - 112);
+    const { data: sessions } = await sb.from('weekly_sessions')
+        .select('*')
+        .eq('course_name', courseName)
+        .gte('week_start', since.toISOString().split('T')[0])
+        .order('week_start', { ascending: false });
+
+    const all = sessions || [];
+    const taught = all.filter(s => s.taught);
+    const paid = taught.filter(s => s.paid);
+    const totalExpected = taught.reduce((a, s) => a + (s.fee || 0), 0);
+    const totalReceived = paid.reduce((a, s) => a + (s.fee || 0), 0);
+    const totalPending = totalExpected - totalReceived;
+
+    const initials = (student.name || student.email || '?')
+        .split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+
+    let html = `
+    <div class="detail-profile">
+        <div class="detail-avatar">${initials}</div>
+        <div class="detail-profile-info">
+            <div class="detail-name">${student.name || '(ไม่ระบุชื่อ)'}</div>
+            <div class="detail-email">${student.email}</div>
+            <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                <span class="badge badge-blue">${student.course_name}</span>
+                ${student.note ? `<span class="detail-note">${student.note}</span>` : ''}
+            </div>
+        </div>
+    </div>
+
+    <div class="detail-stats">
+        <div class="detail-stat">
+            <span class="detail-stat-val">${taught.length}</span>
+            <span class="detail-stat-lbl">ครั้งที่สอน</span>
+        </div>
+        <div class="detail-stat success">
+            <span class="detail-stat-val">฿${totalReceived.toLocaleString()}</span>
+            <span class="detail-stat-lbl">จ่ายแล้ว</span>
+        </div>
+        <div class="detail-stat ${totalPending > 0 ? 'danger' : ''}">
+            <span class="detail-stat-val">฿${totalPending.toLocaleString()}</span>
+            <span class="detail-stat-lbl">ค้างจ่าย</span>
+        </div>
+    </div>`;
+
+    if (all.length) {
+        html += `<div class="detail-section-title">ประวัติ 16 สัปดาห์ล่าสุด</div>
+        <div class="detail-history">`;
+
+        all.forEach(s => {
+            const d = new Date(s.week_start);
+            const label = d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
+            const statusCls = s.paid ? 'hist-paid' : s.taught ? 'hist-taught' : 'hist-absent';
+            const statusTxt = s.paid ? '✅ จ่ายแล้ว' : s.taught ? '⏳ ค้างจ่าย' : '○ ไม่ได้สอน';
+            html += `
+            <div class="hist-row ${statusCls}">
+                <span class="hist-date">${label}</span>
+                <span class="hist-status">${statusTxt}</span>
+                <span class="hist-fee">${s.taught ? '฿'+(s.fee||0).toLocaleString() : '—'}</span>
+            </div>`;
+        });
+
+        html += `</div>`;
+    } else {
+        html += `<div class="detail-empty">ยังไม่มีประวัติสัปดาห์สำหรับคอร์สนี้</div>`;
+    }
+
+    html += `<div class="modal-actions" style="margin-top:20px;">
+        <button class="btn btn-ghost" onclick="closeStudentDetailModal()">ปิด</button>
+        <button class="btn btn-primary" onclick='closeStudentDetailModal();openEditStudentModal(${JSON.stringify(student)})'>✏️ แก้ไขข้อมูล</button>
+    </div>`;
+
+    document.getElementById('student-detail-body').innerHTML = html;
+}
+
+function closeStudentDetailModal() {
+    document.getElementById('student-detail-modal').style.display = 'none';
+}
+
+function handleDetailOverlayBg(e) {
+    if (e.target.id === 'student-detail-modal') closeStudentDetailModal();
+}
+
+// ==============================
+// FEATURE 4: DUPLICATE COURSE
+// ==============================
+let _dupCourseId = null;
+let _dupCourseName = '';
+
+function openDuplicateCourse(courseId, courseName) {
+    _dupCourseId   = courseId;
+    _dupCourseName = courseName;
+    document.getElementById('dup-source-label').textContent = `คัดลอกจากคอร์ส: ${courseName}`;
+    document.getElementById('dup-new-name').value = courseName + '_copy';
+    document.getElementById('dup-copy-lessons').checked = true;
+    document.getElementById('dup-msg').textContent = '';
+    document.getElementById('dup-confirm-btn').disabled = false;
+    document.getElementById('dup-confirm-btn').textContent = '📋 ก็อปปี้';
+    document.getElementById('duplicate-modal').style.display = 'flex';
+    setTimeout(() => {
+        const inp = document.getElementById('dup-new-name');
+        if (inp) { inp.focus(); inp.select(); }
+    }, 150);
+}
+
+function closeDuplicateModal() {
+    document.getElementById('duplicate-modal').style.display = 'none';
+}
+
+async function confirmDuplicate() {
+    const newName = document.getElementById('dup-new-name').value.trim();
+    const copyLessons = document.getElementById('dup-copy-lessons').checked;
+    const msg = document.getElementById('dup-msg');
+    const btn = document.getElementById('dup-confirm-btn');
+
+    if (!newName) { showMsg(msg, 'กรุณากรอกชื่อคอร์สใหม่', 'error'); return; }
+    if (newName === _dupCourseName) { showMsg(msg, 'กรุณาใช้ชื่อที่ต่างจากเดิม', 'error'); return; }
+
+    const { data: existing } = await sb.from('courses').select('id').eq('name', newName).limit(1);
+    if (existing?.length) { showMsg(msg, `มีคอร์สชื่อ "${newName}" อยู่แล้ว`, 'error'); return; }
+
+    btn.disabled = true;
+    btn.textContent = 'กำลังก็อปปี้...';
+
+    const { error: courseErr } = await sb.from('courses').insert([{ name: newName }]);
+    if (courseErr) {
+        btn.disabled = false; btn.textContent = '📋 ก็อปปี้';
+        showMsg(msg, 'สร้างคอร์สไม่สำเร็จ: ' + courseErr.message, 'error');
+        return;
+    }
+
+    if (copyLessons) {
+        const { data: srcLessons } = await sb.from('lessons')
+            .select('*')
+            .eq('course_name', _dupCourseName)
+            .order('order_no');
+
+        if (srcLessons?.length) {
+            const toInsert = srcLessons.map(l => ({
+                course_name:  newName,
+                topic_name:   l.topic_name,
+                lesson_title: l.lesson_title,
+                vimeo_id:     l.vimeo_id,
+                order_no:     l.order_no,
+                pdf_url:      l.pdf_url,
+            }));
+            const { error: lessonErr } = await sb.from('lessons').insert(toInsert);
+            if (lessonErr) {
+                showMsg(msg, `คอร์สสร้างแล้ว แต่คัดลอกบทเรียนไม่สำเร็จ: ${lessonErr.message}`, 'error');
+                btn.disabled = false; btn.textContent = '📋 ก็อปปี้';
+                await Promise.all([loadCourseList(), loadCourseDropdowns()]);
+                return;
+            }
+        }
+    }
+
+    closeDuplicateModal();
+    showMsg(document.getElementById('course-msg'),
+        `✅ ก็อปปี้คอร์ส "${newName}" สำเร็จ${copyLessons ? ' พร้อมบทเรียนทั้งหมด' : ''}`, 'success');
+    await Promise.all([loadCourseList(), loadCourseDropdowns(), loadStats(), loadLessonList(), loadFeeSettings()]);
+}
+
+// ==============================
+// FEATURE 5: FINANCE CALENDAR VIEW
+// ==============================
+function switchFinanceView(view) {
+    const weekView = document.getElementById('finance-week-view');
+    const calView  = document.getElementById('finance-calendar-view');
+    const btnWeek  = document.getElementById('view-btn-week');
+    const btnCal   = document.getElementById('view-btn-calendar');
+
+    if (view === 'calendar') {
+        weekView.style.display = 'none';
+        calView.style.display  = 'block';
+        btnWeek.classList.remove('active');
+        btnCal.classList.add('active');
+        loadCalendarView();
+    } else {
+        weekView.style.display = 'block';
+        calView.style.display  = 'none';
+        btnWeek.classList.add('active');
+        btnCal.classList.remove('active');
+    }
+}
+
+async function loadCalendarView() {
+    const wrap = document.getElementById('finance-calendar');
+    if (!wrap) return;
+    wrap.innerHTML = '<div style="padding:20px;color:var(--text-muted);">กำลังโหลด...</div>';
+
+    // Build list of last 10 week starts
+    const today = getWeekStart(new Date());
+    const weeks = [];
+    for (let i = 9; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i * 7);
+        weeks.push(d.toISOString().split('T')[0]);
+    }
+
+    const { data: sessions } = await sb.from('weekly_sessions')
+        .select('*')
+        .gte('week_start', weeks[0])
+        .lte('week_start', weeks[weeks.length - 1])
+        .order('week_start');
+
+    if (!_allCourses.length) {
+        await loadCourseDropdowns();
+    }
+    if (!_allCourses.length) {
+        wrap.innerHTML = '<div style="padding:20px;color:var(--text-muted);">ยังไม่มีคอร์ส</div>';
+        return;
+    }
+
+    // Build lookup: weekStr -> courseName -> session
+    const lookup = {};
+    (sessions || []).forEach(s => {
+        if (!lookup[s.week_start]) lookup[s.week_start] = {};
+        lookup[s.week_start][s.course_name] = s;
+    });
+
+    const courseNames = _allCourses.map(c => c.name);
+
+    // Header row: week labels
+    let html = '<div class="cal-table"><div class="cal-row cal-head"><div class="cal-cell cal-course-header">คอร์ส</div>';
+    weeks.forEach(w => {
+        const d = new Date(w + 'T00:00:00');
+        const label = d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+        const isCurrentWeek = w === today.toISOString().split('T')[0];
+        html += `<div class="cal-cell cal-week-header ${isCurrentWeek ? 'cal-current-week' : ''}">${label}${isCurrentWeek ? '<br><span class="cal-now-badge">นี้</span>' : ''}</div>`;
+    });
+    html += '</div>';
+
+    // Course rows
+    courseNames.forEach(cn => {
+        html += `<div class="cal-row"><div class="cal-cell cal-course-label">${cn}</div>`;
+        weeks.forEach(w => {
+            const s = lookup[w]?.[cn];
+            if (!s) {
+                html += `<div class="cal-cell cal-cell-empty" onclick="jumpToWeek('${w}')">—</div>`;
+            } else if (s.paid) {
+                html += `<div class="cal-cell cal-cell-paid" onclick="jumpToWeek('${w}')" title="จ่ายแล้ว ฿${(s.fee||0).toLocaleString()}">฿${(s.fee||0).toLocaleString()}<br><span class="cal-status-txt">✅</span></div>`;
+            } else if (s.taught) {
+                html += `<div class="cal-cell cal-cell-taught" onclick="jumpToWeek('${w}')" title="สอนแล้ว ยังไม่จ่าย ฿${(s.fee||0).toLocaleString()}">฿${(s.fee||0).toLocaleString()}<br><span class="cal-status-txt">⏳</span></div>`;
+            } else {
+                html += `<div class="cal-cell cal-cell-absent" onclick="jumpToWeek('${w}')" title="ไม่ได้สอน">○</div>`;
+            }
+        });
+        html += '</div>';
+    });
+
+    html += '</div>';
+    wrap.innerHTML = html;
+}
+
+function jumpToWeek(weekStr) {
+    const d = new Date(weekStr + 'T00:00:00');
+    _currentWeekStart = d;
+    switchFinanceView('week');
+    loadWeekSessions();
 }
