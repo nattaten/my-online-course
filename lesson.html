@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>บทเรียน | Math 10 10 10</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="student-pages.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="student-pages.js" defer></script>
+</head>
+<body data-page="lesson">
+    <header class="student-topbar">
+        <a class="student-brand" href="dashboard.html">
+            <span class="student-brand-icon">M</span>
+            <span>Math 10 10 10</span>
+        </a>
+        <div class="student-actions">
+            <a class="student-link-btn" href="dashboard.html">คอร์สของฉัน</a>
+            <button id="logout-btn" class="logout-btn" type="button">ออกจากระบบ</button>
+        </div>
+    </header>
+
+    <main class="student-page">
+        <section class="lesson-header">
+            <p class="student-kicker">Lesson Room</p>
+            <h2 id="course-title">บทเรียน</h2>
+            <p id="lesson-summary" class="student-muted">กำลังโหลดบทเรียน...</p>
+        </section>
+
+        <section id="lesson-groups" class="student-lesson-groups" aria-live="polite"></section>
+        <p id="page-message" class="student-message" role="status"></p>
+    </main>
+</body>
+</html>

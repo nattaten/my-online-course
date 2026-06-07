@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>คอร์สของฉัน | Math 10 10 10</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="student-pages.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="student-pages.js" defer></script>
+</head>
+<body data-page="dashboard">
+    <header class="student-topbar">
+        <a class="student-brand" href="dashboard.html">
+            <span class="student-brand-icon">M</span>
+            <span>Math 10 10 10</span>
+        </a>
+        <button id="logout-btn" class="logout-btn" type="button">ออกจากระบบ</button>
+    </header>
+
+    <main class="student-page">
+        <section class="dashboard-hero">
+            <div>
+                <p class="student-kicker">Student Dashboard</p>
+                <h1>คอร์สเรียนของฉัน</h1>
+                <p id="student-email" class="student-muted">กำลังโหลดข้อมูลนักเรียน...</p>
+            </div>
+            <div class="hero-stat">
+                <span id="course-count">0</span>
+                <small>คอร์สที่มีสิทธิ์เรียน</small>
+            </div>
+        </section>
+
+        <section class="student-section-head">
+            <div>
+                <h2>เลือกคอร์สเพื่อเริ่มเรียน</h2>
+                <p class="student-muted">ระบบจะแสดงบทเรียน คลิป และเอกสาร PDF ของคอร์สที่เลือก</p>
+            </div>
+        </section>
+
+        <section id="course-grid" class="student-course-grid" aria-live="polite"></section>
+        <p id="page-message" class="student-message" role="status"></p>
+    </main>
+</body>
+</html>
