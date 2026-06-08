@@ -296,7 +296,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // ===== Video / PDF / No-content =====
         const embedUrl = getYouTubeEmbedUrl(lesson.youtube_url || '');
-        const hasPdf   = checkPdf(lesson.pdf_url);
+        const pdfFiles = parsePdfFiles(lesson.pdf_url);
+        const hasPdf   = pdfFiles.length > 0;
 
         hide('video-wrap');
         hide('pdf-only-banner');
@@ -316,12 +317,11 @@ document.addEventListener('DOMContentLoaded', () => {
         // ===== PDF row =====
         show('pdf-row');
         if (hasPdf) {
-            const pdfLink = document.getElementById('pdf-link');
-            if (pdfLink) pdfLink.href = lesson.pdf_url;
-            show('pdf-link');
+            renderPdfDocuments(pdfFiles);
+            show('pdf-documents');
             hide('pdf-missing');
         } else {
-            hide('pdf-link');
+            hide('pdf-documents');
             show('pdf-missing');
         }
 
@@ -367,8 +367,59 @@ document.addEventListener('DOMContentLoaded', () => {
     // ============================================================
     // Shared helpers
     // ============================================================
-    function checkPdf(url) {
-        return !!url && String(url).trim() !== '' && url !== 'null' && url !== 'undefined';
+    function parsePdfFiles(value) {
+        if (!value) return [];
+        return String(value)
+            .split(',')
+            .map(url => url.trim())
+            .filter(url => url && url !== 'null' && url !== 'undefined')
+            .map((url, index) => ({
+                url,
+                name: getPdfFileName(url, index),
+            }));
+    }
+
+    function getPdfFileName(url, index) {
+        const fallback = `เอกสาร ${index + 1}`;
+        try {
+            const parsed = new URL(url);
+            const lastSegment = parsed.pathname.split('/').filter(Boolean).pop();
+            return prettifyFileName(lastSegment) || fallback;
+        } catch (_) {
+            const cleanUrl = String(url).split('?')[0].split('#')[0];
+            const lastSegment = cleanUrl.split('/').filter(Boolean).pop();
+            return prettifyFileName(lastSegment) || fallback;
+        }
+    }
+
+    function prettifyFileName(fileName) {
+        if (!fileName) return '';
+        try {
+            fileName = decodeURIComponent(fileName);
+        } catch (_) {}
+        return fileName
+            .replace(/\.[a-z0-9]{2,8}$/i, '')
+            .replace(/[_-]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    function renderPdfDocuments(files) {
+        const wrap = document.getElementById('pdf-documents');
+        if (!wrap) return;
+        wrap.innerHTML = `
+            <p class="pdf-documents-title">เอกสารประกอบการเรียน</p>
+            <div class="pdf-documents-list">
+                ${files.map((file, index) => `
+                    <a class="pdf-open-btn" href="${escAttr(file.url)}" target="_blank" rel="noopener">
+                        <span class="pdf-file-icon">📄</span>
+                        <span class="pdf-file-text">
+                            <span class="pdf-file-name">${escHtml(file.name)}</span>
+                            <span class="pdf-file-meta">ไฟล์ที่ ${index + 1}</span>
+                        </span>
+                    </a>
+                `).join('')}
+            </div>`;
     }
 
     function getYouTubeEmbedUrl(url) {

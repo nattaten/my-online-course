@@ -972,6 +972,28 @@ body {
     gap: 10px;
 }
 
+.pdf-documents {
+    width: 100%;
+    padding: 14px 16px;
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+}
+
+.pdf-documents-title {
+    font-family: 'Kanit', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--dark);
+    margin-bottom: 10px;
+}
+
+.pdf-documents-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
 .pdf-open-btn {
     display: inline-flex;
     align-items: center;
@@ -985,9 +1007,35 @@ body {
     text-decoration: none;
     box-shadow: 0 4px 16px rgba(16,185,129,0.3);
     transition: opacity 0.2s, transform 0.2s;
+    min-width: 190px;
+    max-width: 100%;
 }
 
 .pdf-open-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+
+.pdf-file-icon {
+    flex-shrink: 0;
+}
+
+.pdf-file-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+}
+
+.pdf-file-name {
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pdf-file-meta {
+    font-size: 11px;
+    font-weight: 500;
+    opacity: 0.78;
+}
 
 .pdf-missing {
     color: var(--text-soft);

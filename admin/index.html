@@ -159,15 +159,17 @@
                     <h3 class="panel-title">➕ เพิ่มบทเรียน</h3>
                     <div class="field">
                         <label>คอร์ส <span class="required">*</span></label>
-                        <select id="lesson-course-select"><option value="">-- เลือกคอร์ส --</option></select>
+                        <select id="lesson-course-select" onchange="handleLessonCourseChange()"><option value="">-- เลือกคอร์ส --</option></select>
                     </div>
                     <div class="field">
                         <label>หัวข้อ / เรื่อง</label>
-                        <input type="text" id="topic-name" placeholder="เช่น เรื่องที่ 1: จำนวนนับ">
+                        <input type="text" id="topic-name" list="lesson-topic-options" placeholder="เช่น เรื่องที่ 1: จำนวนนับ" oninput="handleLessonTopicChange()">
+                        <datalist id="lesson-topic-options"></datalist>
                     </div>
                     <div class="field">
                         <label>ชื่อบทเรียน <span class="required">*</span></label>
-                        <input type="text" id="lesson-title" placeholder="เช่น บทนำพื้นฐาน">
+                        <input type="text" id="lesson-title" list="lesson-title-options" placeholder="เช่น บทนำพื้นฐาน">
+                        <datalist id="lesson-title-options"></datalist>
                     </div>
                     <div class="field">
                         <label>YouTube URL หรือ Video ID</label>
@@ -333,15 +335,17 @@
         <input type="hidden" id="edit-lesson-id">
         <div class="field">
             <label>คอร์ส</label>
-            <select id="edit-lesson-course"></select>
+            <select id="edit-lesson-course" onchange="handleEditLessonCourseChange()"></select>
         </div>
         <div class="field">
             <label>หัวข้อ / เรื่อง</label>
-            <input type="text" id="edit-lesson-topic" placeholder="เช่น เรื่องที่ 1: จำนวนนับ">
+            <input type="text" id="edit-lesson-topic" list="edit-lesson-topic-options" placeholder="เช่น เรื่องที่ 1: จำนวนนับ" oninput="handleEditLessonTopicChange()">
+            <datalist id="edit-lesson-topic-options"></datalist>
         </div>
         <div class="field">
             <label>ชื่อบทเรียน</label>
-            <input type="text" id="edit-lesson-title" placeholder="ชื่อบทเรียน">
+            <input type="text" id="edit-lesson-title" list="edit-lesson-title-options" placeholder="ชื่อบทเรียน">
+            <datalist id="edit-lesson-title-options"></datalist>
         </div>
         <div class="field">
             <label>YouTube URL หรือ Video ID</label>

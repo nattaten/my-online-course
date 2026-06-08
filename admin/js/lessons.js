@@ -5,6 +5,88 @@
 
 let _currentLessons = [];
 let _dragSrcId = null;
+let _lessonSuggestionCache = new Map();
+
+async function getLessonSuggestions(courseCode) {
+    if (!courseCode) return [];
+    if (_lessonSuggestionCache.has(courseCode)) return _lessonSuggestionCache.get(courseCode);
+
+    const { data, error } = await sb
+        .from('lessons')
+        .select('topic_name, lesson_title, course_code, order_no')
+        .eq('course_code', courseCode)
+        .order('order_no', { ascending: true });
+
+    if (error) {
+        console.warn('Could not load lesson suggestions:', error.message);
+        return [];
+    }
+
+    const rows = data || [];
+    _lessonSuggestionCache.set(courseCode, rows);
+    return rows;
+}
+
+function uniqueNonEmpty(values) {
+    return [...new Set(values.map(value => (value || '').trim()).filter(Boolean))];
+}
+
+function escAttr(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function renderDatalistOptions(id, values) {
+    const list = document.getElementById(id);
+    if (!list) return;
+    list.innerHTML = uniqueNonEmpty(values)
+        .map(value => `<option value="${escAttr(value)}"></option>`)
+        .join('');
+}
+
+async function refreshLessonTopicOptions(courseSelectId, topicListId, titleListId) {
+    const courseCode = document.getElementById(courseSelectId)?.value;
+    const rows = await getLessonSuggestions(courseCode);
+    renderDatalistOptions(topicListId, rows.map(row => row.topic_name));
+    renderDatalistOptions(titleListId, rows.map(row => row.lesson_title));
+}
+
+async function refreshLessonTitleOptions(courseSelectId, topicInputId, titleListId) {
+    const courseCode = document.getElementById(courseSelectId)?.value;
+    const topic = document.getElementById(topicInputId)?.value.trim();
+    const rows = await getLessonSuggestions(courseCode);
+    const hasExactTopic = topic && rows.some(row => (row.topic_name || '').trim() === topic);
+    const filteredRows = hasExactTopic ? rows.filter(row => (row.topic_name || '').trim() === topic) : rows;
+    renderDatalistOptions(titleListId, filteredRows.map(row => row.lesson_title));
+}
+
+async function handleLessonCourseChange() {
+    document.getElementById('topic-name').value = '';
+    document.getElementById('lesson-title').value = '';
+    await refreshLessonTopicOptions('lesson-course-select', 'lesson-topic-options', 'lesson-title-options');
+}
+
+async function handleLessonTopicChange() {
+    await refreshLessonTitleOptions('lesson-course-select', 'topic-name', 'lesson-title-options');
+}
+
+async function handleEditLessonCourseChange() {
+    document.getElementById('edit-lesson-topic').value = '';
+    document.getElementById('edit-lesson-title').value = '';
+    await refreshLessonTopicOptions('edit-lesson-course', 'edit-lesson-topic-options', 'edit-lesson-title-options');
+}
+
+async function handleEditLessonTopicChange() {
+    await refreshLessonTitleOptions('edit-lesson-course', 'edit-lesson-topic', 'edit-lesson-title-options');
+}
+
+function clearLessonSuggestionCache(courseCode) {
+    if (courseCode) _lessonSuggestionCache.delete(courseCode);
+    else _lessonSuggestionCache = new Map();
+}
 
 // ---- โหลดรายชื่อบทเรียน ----
 async function loadLessonList() {
@@ -78,6 +160,7 @@ async function addLesson() {
 
     if (error) { showMsg(msg, 'เกิดข้อผิดพลาด: ' + error.message, 'error'); return; }
 
+    clearLessonSuggestionCache(courseCode);
     showMsg(msg, `✅ เพิ่มบทเรียน "${title}" สำเร็จ`, 'success');
     ['lesson-title', 'topic-name', 'youtube-url', 'pdf-url', 'lesson-order']
         .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
@@ -87,10 +170,11 @@ async function addLesson() {
     if (filterEl && !filterEl.value) filterEl.value = courseCode;
 
     await loadLessonList();
+    await refreshLessonTopicOptions('lesson-course-select', 'lesson-topic-options', 'lesson-title-options');
 }
 
 // ---- แก้ไขบทเรียน ----
-function openEditLessonModal(lesson) {
+async function openEditLessonModal(lesson) {
     document.getElementById('edit-lesson-id').value      = lesson.id;
     document.getElementById('edit-lesson-title').value   = lesson.lesson_title || '';
     document.getElementById('edit-lesson-topic').value   = lesson.topic_name   || '';
@@ -108,6 +192,8 @@ function openEditLessonModal(lesson) {
     }
 
     document.getElementById('edit-lesson-modal').style.display = 'flex';
+    await refreshLessonTopicOptions('edit-lesson-course', 'edit-lesson-topic-options', 'edit-lesson-title-options');
+    await refreshLessonTitleOptions('edit-lesson-course', 'edit-lesson-topic', 'edit-lesson-title-options');
     setTimeout(() => document.getElementById('edit-lesson-title')?.focus(), 150);
 }
 
@@ -142,6 +228,7 @@ async function saveEditLesson() {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 บันทึก'; }
 
     if (error) { showMsg(msg, 'บันทึกไม่สำเร็จ: ' + error.message, 'error'); return; }
+    clearLessonSuggestionCache(course);
     closeEditLessonModal();
     await loadLessonList();
 }
@@ -150,6 +237,7 @@ async function saveEditLesson() {
 async function deleteLesson(id) {
     const { error } = await sb.from('lessons').delete().eq('id', id);
     if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return; }
+    clearLessonSuggestionCache();
     await loadLessonList();
 }
 
