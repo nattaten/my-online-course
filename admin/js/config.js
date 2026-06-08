@@ -15,7 +15,7 @@ const APP_CONFIG = {
     // auth-check.js จะเปรียบเทียบกับ Session ที่ล็อกอินมา
     adminEmails: [
         'nattaten@gmail.com',   // 🔑 แก้เป็นอีเมลแอดมินจริง
-    ],   // 🔑 เปลี่ยนเป็นรหัสผ่านจริง,
+    ],   
 
     // --- App Meta ---
     appName:    'Math 10 10 10',

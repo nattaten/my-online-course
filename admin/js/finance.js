@@ -1,211 +1,347 @@
-// ============================================================
-// finance.js — รายงานการเงินรายสัปดาห์ (Weekly Financial Report)
-// ใช้ตาราง: enrollments, lessons, courses
-//
-// ลอจิก:
-//   vd_* → นับแถว enrollments.enrolled_at ในสัปดาห์นั้น × price
-//   ol_* → (นักเรียนทั้งหมดที่ enroll) × (จำนวน lessons ที่สร้างในสัปดาห์นั้น) × price
+﻿// ============================================================
+// finance.js - Weekly + monthly finance dashboard
+// Rules:
+//   vd_* = enrollments created in the period * course price, using enrollments.enrolled_at
+//   ol_* = lessons created in the period * course price, using lessons.created_at
 // ============================================================
 
-const FINANCE_WEEKS_BACK = 12; // แสดงย้อนหลังกี่สัปดาห์
+const FINANCE_WEEK_COUNT = 8;
+const FINANCE_MONTH_COUNT = 6;
 
-// ---- Entry point ----
 async function loadFinance() {
     const wrap = document.getElementById('finance-weeks');
     if (!wrap) return;
-    wrap.innerHTML = '<div class="loading-state">กำลังคำนวณรายได้...</div>';
+    wrap.innerHTML = '<div class="loading-state">กำลังจัดสรุปการเงิน...</div>';
 
-    // 1. โหลดข้อมูลทั้งหมดที่ต้องการในรอบเดียว
-    const [coursesRes, enrollmentsRes] = await Promise.all([
-        sb.from('courses').select('id, course_code, name, price').order('id'),
-        sb.from('enrollments').select('id, user_id, course_code, enrolled_at'),
-    ]);
+    try {
+        const oldestWeekStart = buildWeekPeriods(FINANCE_WEEK_COUNT).at(-1).start;
+        const oldestMonthStart = buildMonthPeriods(FINANCE_MONTH_COUNT).at(-1).start;
+        const oldestStart = oldestWeekStart < oldestMonthStart ? oldestWeekStart : oldestMonthStart;
 
-    const courses     = coursesRes.data     || [];
-    const enrollments = enrollmentsRes.data || [];
+        const [coursesRes, enrollmentsRes, lessonsRes] = await Promise.all([
+            sb.from('courses').select('id, course_code, name, subject, schedule_day, schedule_time, price, is_active').order('id', { ascending: true }),
+            sb.from('enrollments').select('id, user_id, course_code, sort_order, enrolled_at').gte('enrolled_at', oldestStart.toISOString()).order('enrolled_at', { ascending: false }),
+            sb.from('lessons').select('id, course_code, lesson_title, created_at').gte('created_at', oldestStart.toISOString()).order('created_at', { ascending: false }),
+        ]);
 
-    if (!courses.length) {
-        wrap.innerHTML = '<div class="empty-state">ยังไม่มีคอร์สในระบบ</div>';
-        return;
-    }
+        if (coursesRes.error) throw coursesRes.error;
+        if (enrollmentsRes.error) throw enrollmentsRes.error;
+        if (lessonsRes.error) throw lessonsRes.error;
 
-    // สร้าง price map
-    const priceMap = {};
-    courses.forEach(c => { priceMap[c.course_code] = c.price || 0; });
+        const courses = coursesRes.data || [];
+        const enrollments = enrollmentsRes.data || [];
+        const lessons = lessonsRes.data || [];
 
-    // 2. สร้างรายการสัปดาห์ที่ต้องการ
-    const weeks = buildWeekList(FINANCE_WEEKS_BACK);
-
-    // 3. โหลด lessons เฉพาะช่วงเวลาที่ต้องการ (ol_ courses)
-    const olCodes = courses.filter(c => c.course_code?.startsWith('ol_')).map(c => c.course_code);
-    let olLessons = [];
-    if (olCodes.length) {
-        const { data } = await sb
-            .from('lessons')
-            .select('id, course_code, created_at')
-            .in('course_code', olCodes)
-            .gte('created_at', weeks[weeks.length - 1].start.toISOString())
-            .lte('created_at', new Date().toISOString());
-        olLessons = data || [];
-    }
-
-    // 4. นับนักเรียน ol_ ปัจจุบัน (enrollment count per course_code)
-    const olEnrollCount = {};
-    olCodes.forEach(code => {
-        olEnrollCount[code] = enrollments.filter(e => e.course_code === code).length;
-    });
-
-    // 5. คำนวณและ render แต่ละสัปดาห์
-    let html = '';
-    for (const week of weeks) {
-        const card = buildWeekCard(week, courses, enrollments, olLessons, olEnrollCount, priceMap);
-        if (card) html += card;
-    }
-
-    wrap.innerHTML = html || '<div class="empty-state">ยังไม่มีข้อมูลการเงิน</div>';
-}
-
-// ---- สร้างรายการสัปดาห์ ----
-function buildWeekList(count) {
-    const weeks = [];
-    const now = getWeekStart(new Date());
-    for (let i = 0; i < count; i++) {
-        const start = new Date(now);
-        start.setDate(start.getDate() - i * 7);
-        const end = new Date(start);
-        end.setDate(end.getDate() + 6);
-        end.setHours(23, 59, 59, 999);
-        weeks.push({ start, end, index: i });
-    }
-    return weeks;
-}
-
-// ---- สร้าง HTML Card สำหรับสัปดาห์ ----
-function buildWeekCard(week, courses, enrollments, olLessons, olEnrollCount, priceMap) {
-    const weekRows = [];
-
-    courses.forEach(c => {
-        const code  = c.course_code;
-        const price = priceMap[code] || 0;
-
-        if (code.startsWith('vd_')) {
-            // วิดีโอ: นับ enrollments ในสัปดาห์นี้
-            const count = enrollments.filter(e =>
-                e.course_code === code &&
-                isInWeek(e.enrolled_at, week)
-            ).length;
-
-            if (count > 0) {
-                weekRows.push({
-                    code, name: c.name,
-                    type: 'vd',
-                    detail: `${count} คนสมัครใหม่ × ฿${price.toLocaleString()}`,
-                    amount: count * price,
-                });
-            }
-
-        } else if (code.startsWith('ol_')) {
-            // สอนสด: นับ lessons ที่สร้างในสัปดาห์นี้
-            const lessonCount = olLessons.filter(l =>
-                l.course_code === code && isInWeek(l.created_at, week)
-            ).length;
-
-            const stuCount = olEnrollCount[code] || 0;
-
-            if (lessonCount > 0 && stuCount > 0) {
-                weekRows.push({
-                    code, name: c.name,
-                    type: 'ol',
-                    detail: `${stuCount} นักเรียน × ${lessonCount} ครั้ง × ฿${price.toLocaleString()}`,
-                    amount: stuCount * lessonCount * price,
-                });
-            }
+        if (!courses.length) {
+            wrap.innerHTML = '<div class="empty-state">ยังไม่มีคอร์สในระบบ</div>';
+            return;
         }
+
+        const model = buildFinanceModel(courses, enrollments, lessons);
+        const weeks = buildWeekPeriods(FINANCE_WEEK_COUNT).map((period, index) => buildPeriodSummary(period, model, index === 0));
+        const months = buildMonthPeriods(FINANCE_MONTH_COUNT).map((period, index) => buildPeriodSummary(period, model, index === 0));
+
+        wrap.innerHTML = `
+            ${renderFinanceHero(model, weeks[0], months[0])}
+            <div class="finance-tabs-shell">
+                <div class="finance-section-heading">
+                    <div>
+                        <h3>สรุปรายสัปดาห์</h3>
+                    </div>
+                </div>
+                <div class="finance-timeline">
+                    ${weeks.map((period, index) => renderTimelineItem(period, index)).join('')}
+                </div>
+            </div>
+            <div class="finance-tabs-shell">
+                <div class="finance-section-heading">
+                    <div>
+                        <h3>สรุปรายเดือน</h3>
+                        <p>รวมรายได้สอนสดและวิดีโอที่เกิดขึ้นในเดือนนั้น</p>
+                    </div>
+                </div>
+                <div class="finance-timeline">
+                    ${months.map((period, index) => renderTimelineItem(period, index)).join('')}
+                </div>
+            </div>
+        `;    } catch (error) {
+        wrap.innerHTML = `<div class="error-state">โหลด Finance ไม่สำเร็จ: ${escHtml(error.message)}</div>`;
+    }
+}
+
+function buildFinanceModel(courses, enrollments, lessons) {
+    const courseMap = new Map(courses.map(course => [course.course_code, course]));
+    const vdEnrollments = enrollments
+        .map(enrollment => ({ enrollment, course: courseMap.get(enrollment.course_code) }))
+        .filter(item => item.course?.course_code?.startsWith('vd_') && item.enrollment.enrolled_at);
+
+    const olLessons = lessons
+        .map(lesson => ({ lesson, course: courseMap.get(lesson.course_code) }))
+        .filter(item => item.course?.course_code?.startsWith('ol_'));
+
+    return { courses, enrollments, lessons, courseMap, vdEnrollments, olLessons };
+}
+
+function buildPeriodSummary(period, model, isCurrent) {
+    const olGroups = new Map();
+    const vdGroups = new Map();
+
+    model.olLessons.forEach(({ lesson, course }) => {
+        const date = new Date(lesson.created_at);
+        if (date < period.start || date > period.end) return;
+        addFinanceGroupRow(olGroups, course, 'ol', 'ครั้งที่สอน');
     });
 
-    if (!weekRows.length) return '';  // สัปดาห์ว่างไม่แสดง
+    model.vdEnrollments.forEach(({ enrollment, course }) => {
+        const date = new Date(enrollment.enrolled_at);
+        if (date < period.start || date > period.end) return;
+        addFinanceGroupRow(vdGroups, course, 'vd', 'คนสมัคร');
+    });
 
-    // สรุปตามประเภท
-    const vdTotal = weekRows.filter(r => r.type === 'vd').reduce((s, r) => s + r.amount, 0);
-    const olTotal = weekRows.filter(r => r.type === 'ol').reduce((s, r) => s + r.amount, 0);
-    const grandTotal = vdTotal + olTotal;
+    const olRows = sortFinanceRows([...olGroups.values()]);
+    const vdRows = sortFinanceRows([...vdGroups.values()]);
+    const rows = [...olRows, ...vdRows];
+    const olTotal = olRows.reduce((sum, row) => sum + row.amount, 0);
+    const vdTotal = vdRows.reduce((sum, row) => sum + row.amount, 0);
 
-    const isCurrentWeek = week.index === 0;
-    const weekLabel = formatWeekRange(week.start, week.end);
+    return {
+        ...period,
+        isCurrent,
+        rows,
+        olRows,
+        vdRows,
+        olTotal,
+        vdTotal,
+        total: olTotal + vdTotal,
+    };
+}
+
+function addFinanceGroupRow(groups, course, kind, countLabel) {
+    const current = groups.get(course.course_code) || {
+        kind,
+        code: course.course_code,
+        name: course.name || course.course_code,
+        count: 0,
+        price: Number(course.price || 0),
+        amount: 0,
+        detail: '',
+    };
+    current.count += 1;
+    current.amount = current.count * current.price;
+    current.detail = `${current.count.toLocaleString('th-TH')} ${countLabel} × ${formatBaht(current.price)}`;
+    groups.set(course.course_code, current);
+}
+
+function sortFinanceRows(rows) {
+    return rows.sort((a, b) => b.amount - a.amount || a.code.localeCompare(b.code));
+}
+
+function renderFinanceHero(model, currentWeek, currentMonth) {
+    const totalThisWeek = currentWeek.total;
+    const vdThisWeekCount = currentWeek.vdRows.reduce((sum, row) => sum + row.count, 0);
+    const olThisWeekCount = currentWeek.olRows.reduce((sum, row) => sum + row.count, 0);
 
     return `
-    <div class="finance-card ${isCurrentWeek ? 'finance-card-current' : ''}">
-        <div class="finance-card-header">
-            <div class="finance-card-header-left">
-                ${isCurrentWeek ? '<span class="badge badge-green">สัปดาห์นี้</span>' : ''}
-                <span class="finance-week-label">${weekLabel}</span>
+        <div class="finance-hero">
+            <div class="finance-hero-main">
+                <span class="finance-eyebrow">Finance Dashboard</span>
+                <h3>${formatBaht(totalThisWeek)}</h3>
+                <p>ยอดรวมสัปดาห์นี้: </p>
             </div>
-            <div class="finance-card-total">
-                <span class="finance-total-label">รายได้รวม</span>
-                <span class="finance-total-amount">฿${grandTotal.toLocaleString()}</span>
+            <div class="finance-hero-metrics">
+                ${renderMetric('สอนสดสัปดาห์นี้', formatBaht(currentWeek.olTotal), `${olThisWeekCount.toLocaleString('th-TH')} ครั้งที่สอน`)}
+                ${renderMetric('วิดีโอสัปดาห์นี้', formatBaht(currentWeek.vdTotal), `${vdThisWeekCount.toLocaleString('th-TH')} คนสมัครใหม่`)}
+                ${renderMetric('รวมเดือนนี้', formatBaht(currentMonth.total), 'สอนสด + วิดีโอ')}
             </div>
-        </div>
-
-        <table class="finance-table">
-            <thead>
-                <tr>
-                    <th>คอร์ส</th>
-                    <th>ประเภท</th>
-                    <th>รายละเอียด</th>
-                    <th class="text-right">รายได้</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${weekRows.map(r => `
-                <tr>
-                    <td><span class="mono-text">${escHtml(r.code)}</span><br>
-                        <span class="text-muted" style="font-size:12px;">${escHtml(r.name)}</span></td>
-                    <td>${r.type === 'ol'
-                        ? '<span class="badge badge-orange">สอนสด</span>'
-                        : '<span class="badge badge-blue">วิดีโอ</span>'}</td>
-                    <td class="text-muted" style="font-size:12px;">${r.detail}</td>
-                    <td class="text-right finance-row-amount">฿${r.amount.toLocaleString()}</td>
-                </tr>`).join('')}
-            </tbody>
-            <tfoot>
-                ${vdTotal > 0 ? `
-                <tr class="finance-subtotal">
-                    <td colspan="3">รวมวิดีโอออนไลน์ <span class="badge badge-blue">vd_</span></td>
-                    <td class="text-right">฿${vdTotal.toLocaleString()}</td>
-                </tr>` : ''}
-                ${olTotal > 0 ? `
-                <tr class="finance-subtotal">
-                    <td colspan="3">รวมสอนสด <span class="badge badge-orange">ol_</span></td>
-                    <td class="text-right">฿${olTotal.toLocaleString()}</td>
-                </tr>` : ''}
-                <tr class="finance-grand-total">
-                    <td colspan="3"><strong>ยอดรวมสุทธิประจำสัปดาห์</strong></td>
-                    <td class="text-right"><strong>฿${grandTotal.toLocaleString()}</strong></td>
-                </tr>
-            </tfoot>
-        </table>
-    </div>`;
+        </div>`;
 }
 
-// ---- Helpers ----
-function isInWeek(isoString, week) {
-    if (!isoString) return false;
-    const d = new Date(isoString);
-    return d >= week.start && d <= week.end;
+function renderMetric(label, value, meta) {
+    return `
+        <div class="finance-hero-metric">
+            <span>${label}</span>
+            <strong>${value}</strong>
+            <small>${meta}</small>
+        </div>`;
+}
+
+function renderPeriodCard(period) {
+    const empty = !period.rows.length;
+    return `
+        <article class="finance-period-card ${period.isCurrent ? 'is-current' : ''} ${empty ? 'is-empty' : ''}">
+            <header class="finance-period-header">
+                <div>
+                    <span class="finance-period-label">${period.isCurrent ? 'ปัจจุบัน' : period.typeLabel}</span>
+                    <h4>${period.label}</h4>
+                </div>
+                <strong>${formatBaht(period.total)}</strong>
+            </header>
+            <div class="finance-period-split">
+                <span><b class="dot dot-ol"></b> สอนสด ${formatBaht(period.olTotal)}</span>
+                <span><b class="dot dot-vd"></b> วิดีโอ ${formatBaht(period.vdTotal)}</span>
+            </div>
+            ${empty ? '<div class="finance-empty-inline">ยังไม่มีรายการในช่วงนี้</div>' : renderPeriodRows(period.rows)}
+        </article>`;
+}
+
+function renderTimelineItem(period, index) {
+    const empty = !period.rows.length;
+    const detailsId = `finance-detail-${period.type}-${index}`;
+    const expanded = index === 0 && !empty;
+    return `
+        <article class="finance-timeline-item ${period.isCurrent ? 'is-current' : ''} ${empty ? 'is-empty' : ''}">
+            <div class="finance-timeline-dot"></div>
+            <div class="finance-timeline-card">
+                <button class="finance-timeline-summary" type="button" aria-expanded="${expanded}" aria-controls="${detailsId}" onclick="toggleFinanceDetails('${detailsId}', this)" ${empty ? 'disabled' : ''}>
+                    <span class="finance-summary-main">
+                        <span class="finance-period-label">${period.isCurrent ? (period.type === 'week' ? 'สัปดาห์นี้' : 'เดือนนี้') : period.label}</span>
+                        <strong>${period.isCurrent ? period.label : periodRelativeLabel(period, index)}</strong>
+                        <small>
+                            <span class="${period.olTotal ? '' : 'is-muted'}">สอนสด ${formatBaht(period.olTotal)}</span>
+                            <span aria-hidden="true"> · </span>
+                            <span class="${period.vdTotal ? '' : 'is-muted'}">วิดีโอ ${formatBaht(period.vdTotal)}</span>
+                        </small>
+                    </span>
+                    <span class="finance-summary-total">
+                        <strong>${formatBaht(period.total)}</strong>
+                        <small class="finance-detail-hint">${empty ? 'ไม่มีรายการ' : expanded ? 'ซ่อนรายละเอียด' : 'ดูรายละเอียด'}</small>
+                    </span>
+                </button>
+                <div class="finance-timeline-details ${expanded ? 'is-open' : ''}" id="${detailsId}" ${expanded ? '' : 'hidden'}>
+                    <div class="finance-detail-inner">
+                        ${empty ? '<div class="finance-empty-inline">ยังไม่มีรายการในช่วงนี้</div>' : renderPeriodDetailGroups(period)}
+                    </div>
+                </div>
+            </div>
+        </article>`;
+}
+
+function toggleFinanceDetails(id, button) {
+    const panel = document.getElementById(id);
+    if (!panel) return;
+    const willOpen = panel.hasAttribute('hidden');
+    if (willOpen) {
+        panel.hidden = false;
+        requestAnimationFrame(() => panel.classList.add('is-open'));
+    } else {
+        panel.classList.remove('is-open');
+        window.setTimeout(() => {
+            if (!panel.classList.contains('is-open')) panel.hidden = true;
+        }, 180);
+    }
+    button?.setAttribute('aria-expanded', String(willOpen));
+    const hint = button?.querySelector('.finance-detail-hint');
+    if (hint && hint.textContent !== 'ไม่มีรายการ') hint.textContent = willOpen ? 'ซ่อนรายละเอียด' : 'ดูรายละเอียด';
+}
+
+function periodRelativeLabel(period, index) {
+    if (index === 1) return period.type === 'week' ? 'สัปดาห์ก่อน' : 'เดือนก่อน';
+    return period.typeLabel;
+}
+
+function renderPeriodDetailGroups(period) {
+    return `
+        <div class="finance-detail-groups">
+            ${renderDetailGroup('วิดีโอ', period.vdRows)}
+            ${renderDetailGroup('สอนสด', period.olRows)}
+        </div>`;
+}
+
+function renderDetailGroup(label, rows) {
+    if (!rows.length) {
+        return `
+            <section class="finance-detail-group is-empty">
+                <h4>${label}</h4>
+                <p>ยังไม่มีรายได้ในหมวดนี้</p>
+            </section>`;
+    }
+    return `
+        <section class="finance-detail-group">
+            <h4>${label}</h4>
+            ${rows.map(row => `
+                <div class="finance-detail-line">
+                    <div>
+                        <strong>${escHtml(row.name)}</strong>
+                        <span>${escHtml(row.detail)} = ${formatBaht(row.amount)}</span>
+                    </div>
+                </div>`).join('')}
+        </section>`;
+}
+function renderPeriodRows(rows) {
+    return `
+        <div class="finance-row-list">
+            ${rows.map(row => `
+                <div class="finance-row-card">
+                    <div class="finance-row-left">
+                        <span class="badge ${row.kind === 'ol' ? 'badge-orange' : 'badge-blue'}">${row.kind === 'ol' ? 'สอนสด' : 'วิดีโอ'}</span>
+                        <div>
+                            <strong>${escHtml(row.name)}</strong>
+                            <span class="mono-text">${escHtml(row.code)}</span>
+                            <small>${escHtml(row.detail)}</small>
+                        </div>
+                    </div>
+                    <strong class="finance-row-price">${formatBaht(row.amount)}</strong>
+                </div>`).join('')}
+        </div>`;
+}
+
+function buildWeekPeriods(count) {
+    const currentStart = getWeekStart(new Date());
+    return Array.from({ length: count }, (_, index) => {
+        const start = new Date(currentStart);
+        start.setDate(start.getDate() - index * 7);
+        const end = endOfDay(addDays(start, 6));
+        return {
+            type: 'week',
+            typeLabel: 'สัปดาห์',
+            start,
+            end,
+            label: formatDateRange(start, end),
+        };
+    });
+}
+
+function buildMonthPeriods(count) {
+    const now = new Date();
+    return Array.from({ length: count }, (_, index) => {
+        const start = new Date(now.getFullYear(), now.getMonth() - index, 1);
+        const end = endOfDay(new Date(start.getFullYear(), start.getMonth() + 1, 0));
+        return {
+            type: 'month',
+            typeLabel: 'เดือน',
+            start,
+            end,
+            label: start.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' }),
+        };
+    });
 }
 
 function getWeekStart(date) {
-    const d   = new Date(date);
+    const d = new Date(date);
     const day = d.getDay();
     d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
     d.setHours(0, 0, 0, 0);
     return d;
 }
 
-function formatWeekRange(start, end) {
-    const opts = { day: 'numeric', month: 'short' };
-    const optsFull = { day: 'numeric', month: 'short', year: 'numeric' };
-    return start.toLocaleDateString('th-TH', opts)
-         + ' — '
-         + end.toLocaleDateString('th-TH', optsFull);
+function addDays(date, days) {
+    const d = new Date(date);
+    d.setDate(d.getDate() + days);
+    return d;
+}
+
+function endOfDay(date) {
+    const d = new Date(date);
+    d.setHours(23, 59, 59, 999);
+    return d;
+}
+
+function formatDateRange(start, end) {
+    return start.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
+        + ' - '
+        + end.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function formatBaht(value) {
+    return '฿' + Number(value || 0).toLocaleString('th-TH');
 }

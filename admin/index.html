@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="th">
 <head>
     <meta charset="UTF-8">
@@ -14,7 +14,11 @@
     <!-- 🔒 auth-check ต้องมาหลัง config.js (ต้องการ sb และ APP_CONFIG) -->
     <script src="js/auth-check.js"></script>
 </head>
-<body>
+<body class="admin-auth-pending">
+<div id="auth-root"></div>
+<div id="app-root"></div>
+
+<template id="dashboard-template">
 
 <!-- ===== MAIN DASHBOARD ===== -->
 <div id="dashboard">
@@ -127,7 +131,7 @@
                     <div class="field-row">
                         <div class="field">
                             <label>วันสอน</label>
-                            <input type="text" id="new-course-day" placeholder="เช่น Friday">
+                            <select id="new-course-day"></select>
                         </div>
                         <div class="field">
                             <label>เวลา</label>
@@ -307,7 +311,7 @@
         <div class="field-row">
             <div class="field">
                 <label>วันสอน</label>
-                <input type="text" id="edit-course-day">
+                <select id="edit-course-day"></select>
             </div>
             <div class="field">
                 <label>เวลา</label>
@@ -405,8 +409,8 @@
     <div class="modal-box">
         <h3 class="modal-title" id="enroll-modal-title">➕ ลงทะเบียนคอร์ส</h3>
         <div class="field">
-            <label>เลือกคอร์ส <span class="required">*</span></label>
-            <select id="enroll-course-select"><option value="">-- เลือกคอร์ส --</option></select>
+            <label>เลือกคอร์สที่เปิดอยู่ <span class="required">*</span></label>
+            <div id="enroll-course-checkboxes" class="course-checkbox-group"></div>
         </div>
         <div class="field">
             <label>วันหมดอายุ (ถ้ามี)</label>
@@ -419,13 +423,13 @@
         <p id="enroll-msg" class="form-msg"></p>
         <div class="modal-actions">
             <button class="btn btn-ghost" onclick="closeEnrollModal()">ยกเลิก</button>
-            <button class="btn btn-success" onclick="confirmEnroll()">✅ ลงทะเบียน</button>
+            <button class="btn btn-success" id="enroll-confirm-btn" onclick="confirmEnroll()">✅ ลงทะเบียน</button>
         </div>
     </div>
 </div>
+</template>
 
 <!-- ===== JS MODULES ===== -->
-<script src="js/config.js" data-loaded="true"></script><!-- guard: config อาจโหลดซ้ำ ไม่มีผล เพราะตัวแปรจะ override เดิม -->
 <script src="js/overview.js"></script>
 <script src="js/courses.js"></script>
 <script src="js/lessons.js"></script>
@@ -439,7 +443,7 @@
 let _pendingAction = null;
 
 // ---- Init ----
-document.addEventListener('DOMContentLoaded', async () => {
+window.addEventListener('admin:ready', async () => {
     // แสดงอีเมลผู้ใช้บน sidebar
     const email = window._adminSession?.user?.email || '';
     safeSetText('sidebar-user-email', email);
@@ -480,8 +484,6 @@ async function initDashboard() {
         loadCourseDropdowns(),
         loadOverview(),
         loadCourseList(),
-        loadLessonList(),
-        loadStudentList(),
     ]);
 }
 
@@ -492,6 +494,8 @@ function switchTab(tabName) {
     document.querySelectorAll(`[data-tab="${tabName}"]`).forEach(el => el.classList.add('active'));
 
     // Lazy-load หน้าที่เลือก
+    if (tabName === 'lessons') loadLessonList();
+    if (tabName === 'students') loadStudentList();
     if (tabName === 'finance') loadFinance();
 }
 

@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // students.js — จัดการนักเรียน + การลงทะเบียนคอร์ส (Enrollment)
 // ใช้ตาราง: users, enrollments, courses
 // ============================================================
@@ -12,7 +12,6 @@ async function loadStudentList() {
 
     el.innerHTML = '<div class="loading-state">กำลังโหลด...</div>';
 
-    // ถ้ากรองตามคอร์ส ต้อง join enrollments
     let users;
     if (courseFilter) {
         const { data: enrolled } = await sb
@@ -30,7 +29,6 @@ async function loadStudentList() {
 
     if (!users?.length) { el.innerHTML = '<div class="empty-state">ยังไม่มีนักเรียน</div>'; return; }
 
-    // กรองด้วยคำค้นหา
     const filtered = searchVal
         ? users.filter(s =>
             (s.name  || '').toLowerCase().includes(searchVal) ||
@@ -89,7 +87,6 @@ async function addStudent() {
 }
 
 async function deleteStudent(id) {
-    // ลบ enrollments ที่เชื่อมโยงก่อน
     await sb.from('enrollments').delete().eq('user_id', id);
     const { error } = await sb.from('users').delete().eq('id', id);
     if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return; }
@@ -145,14 +142,12 @@ async function openStudentDetailModal(student) {
     const body = document.getElementById('student-detail-body');
     body.innerHTML = '<div class="loading-state">กำลังโหลด...</div>';
 
-    // โหลด enrollments พร้อม course info
     const { data: enrollments } = await sb
         .from('enrollments')
         .select('id, course_code, enrolled_at, expires_at, note, sort_order')
         .eq('user_id', student.id)
         .order('sort_order', { ascending: true });
 
-    // โหลด lesson_progress
     const { data: progress } = await sb
         .from('lesson_progress')
         .select('lesson_id, course_code, watched_at')
@@ -213,74 +208,136 @@ function closeStudentDetailModal() {
     document.getElementById('student-detail-modal').style.display = 'none';
 }
 
-// ---- Enrollment Modal ----
-let _enrollUserId   = null;
+// ---- Enrollment Modal (multi-course replacement) ----
+let _enrollUserId = null;
 let _enrollUserName = '';
 
-async function openEnrollModal(userId, userName) {
-    _enrollUserId   = userId;
-    _enrollUserName = userName;
-    document.getElementById('enroll-modal-title').textContent = `ลงทะเบียนคอร์สให้ ${userName}`;
-    document.getElementById('enroll-expires').value = '';
-    document.getElementById('enroll-note').value    = '';
-    document.getElementById('enroll-msg').textContent = '';
+async function fetchActiveCourses() {
+    const { data, error } = await sb
+        .from('courses')
+        .select('id, course_code, name, subject, schedule_day, schedule_time, is_active')
+        .eq('is_active', true)
+        .order('id', { ascending: true });
 
-    // โหลดคอร์ส
-    if (!window._allCourses?.length) await loadCourseDropdowns();
+    if (error) throw error;
+    return data || [];
+}
 
-    // โหลด enrollments ปัจจุบัน
-    const { data: existing } = await sb
+async function fetchUserEnrollmentCodes(userId) {
+    const { data, error } = await sb
         .from('enrollments')
         .select('course_code')
         .eq('user_id', userId);
-    const enrolledCodes = new Set((existing || []).map(e => e.course_code));
 
-    const sel = document.getElementById('enroll-course-select');
-    if (sel) {
-        sel.innerHTML = '<option value="">-- เลือกคอร์ส --</option>'
-            + (window._allCourses || []).map(c =>
-                `<option value="${c.course_code}" ${enrolledCodes.has(c.course_code) ? 'disabled' : ''}>
-                    ${escHtml(c.name)} (${c.course_code})
-                    ${enrolledCodes.has(c.course_code) ? ' — ลงทะเบียนแล้ว' : ''}
-                </option>`
-            ).join('');
+    if (error) throw error;
+    return new Set((data || []).map(row => row.course_code));
+}
+
+async function openEnrollModal(userId, userName) {
+    _enrollUserId = userId;
+    _enrollUserName = userName || '';
+
+    const modal = document.getElementById('enroll-modal');
+    const title = document.getElementById('enroll-modal-title');
+    const msg = document.getElementById('enroll-msg');
+    const container = document.getElementById('enroll-course-checkboxes');
+
+    if (title) title.textContent = `จัดการคอร์สของ ${_enrollUserName || 'นักเรียน'}`;
+    if (msg) msg.textContent = '';
+    if (container) container.innerHTML = '<div class="loading-state">กำลังโหลดคอร์ส...</div>';
+    if (modal) modal.style.display = 'flex';
+
+    try {
+        const [activeCourses, enrolledCodes] = await Promise.all([
+            fetchActiveCourses(),
+            fetchUserEnrollmentCodes(userId),
+        ]);
+
+        window._activeCourses = activeCourses;
+
+        if (!container) return;
+        if (!activeCourses.length) {
+            container.innerHTML = '<div class="empty-state">ยังไม่มีคอร์สที่เปิดอยู่</div>';
+            return;
+        }
+
+        container.innerHTML = activeCourses.map(course => {
+            const checked = enrolledCodes.has(course.course_code) ? 'checked' : '';
+            const schedule = [course.schedule_day, course.schedule_time].filter(Boolean).join(' ');
+            return `
+                <label class="course-checkbox-item">
+                    <input type="checkbox" class="course-checkbox" value="${escHtml(course.course_code)}" ${checked}>
+                    <span class="course-checkbox-label">
+                        <span class="course-checkbox-name">${escHtml(course.name || course.course_code)}</span>
+                        <span class="course-checkbox-meta mono-text">${escHtml(course.course_code)}${schedule ? ' · ' + escHtml(schedule) : ''}</span>
+                    </span>
+                </label>`;
+        }).join('');
+    } catch (error) {
+        if (container) container.innerHTML = `<div class="error-state">โหลดคอร์สไม่สำเร็จ: ${escHtml(error.message)}</div>`;
     }
-
-    document.getElementById('enroll-modal').style.display = 'flex';
 }
 
 function closeEnrollModal() {
     document.getElementById('enroll-modal').style.display = 'none';
     _enrollUserId = null;
+    _enrollUserName = '';
 }
 
 async function confirmEnroll() {
-    const msg        = document.getElementById('enroll-msg');
-    const courseCode = document.getElementById('enroll-course-select')?.value;
-    const expires    = document.getElementById('enroll-expires')?.value;
-    const note       = document.getElementById('enroll-note')?.value.trim();
+    const msg = document.getElementById('enroll-msg');
+    const btn = document.getElementById('enroll-confirm-btn');
+    const checkedCodes = [...document.querySelectorAll('#enroll-course-checkboxes .course-checkbox:checked')]
+        .map(cb => cb.value);
 
-    if (!courseCode) { showMsg(msg, 'กรุณาเลือกคอร์ส', 'error'); return; }
+    if (!_enrollUserId) {
+        showMsg(msg, 'ไม่พบนักเรียนที่ต้องการบันทึก', 'error');
+        return;
+    }
 
-    const { error } = await sb.from('enrollments').insert([{
-        user_id:     _enrollUserId,
-        course_code: courseCode,
-        expires_at:  expires || null,
-        note:        note    || null,
-        sort_order:  100,
-    }]);
+    try {
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'กำลังบันทึก...';
+        }
 
-    if (error) { showMsg(msg, 'ลงทะเบียนไม่สำเร็จ: ' + error.message, 'error'); return; }
-    showMsg(msg, '✅ ลงทะเบียนสำเร็จ', 'success');
-    setTimeout(() => closeEnrollModal(), 1000);
-    await loadStudentList();
+        const { error: deleteError } = await sb
+            .from('enrollments')
+            .delete()
+            .eq('user_id', _enrollUserId);
+        if (deleteError) throw deleteError;
+
+        if (checkedCodes.length) {
+            const rows = checkedCodes.map((courseCode, index) => ({
+                user_id: _enrollUserId,
+                course_code: courseCode,
+                sort_order: index + 1,
+            }));
+
+            const { error: insertError } = await sb
+                .from('enrollments')
+                .insert(rows);
+            if (insertError) throw insertError;
+        }
+
+        showMsg(msg, `บันทึกคอร์ส ${checkedCodes.length} รายการสำเร็จ`, 'success');
+        await loadStudentList();
+        setTimeout(closeEnrollModal, 700);
+    } catch (error) {
+        showMsg(msg, 'บันทึกคอร์สไม่สำเร็จ: ' + error.message, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'บันทึก';
+        }
+    }
 }
 
 async function unenrollStudent(enrollmentId, userId) {
     if (!confirm('ยืนยันการยกเลิกคอร์สนี้?')) return;
     const { error } = await sb.from('enrollments').delete().eq('id', enrollmentId);
     if (error) { alert('ยกเลิกไม่สำเร็จ: ' + error.message); return; }
-    // reload detail modal
     const { data: student } = await sb.from('users').select('*').eq('id', userId).single();
     if (student) await openStudentDetailModal(student);
+    await loadStudentList();
 }
