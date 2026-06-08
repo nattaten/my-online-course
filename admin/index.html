@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Admin — Math 10 10 10</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/admin-style.css">
+
+    <!-- ⚡ โหลด Supabase และ config ก่อนทุกอย่าง -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/config.js"></script>
+    <!-- 🔒 auth-check ต้องมาหลัง config.js (ต้องการ sb และ APP_CONFIG) -->
+    <script src="js/auth-check.js"></script>
+</head>
+<body>
+
+<!-- ===== MAIN DASHBOARD ===== -->
+<div id="dashboard">
+
+    <!-- Desktop Sidebar -->
+    <nav class="sidebar">
+        <div class="sidebar-brand">
+            <span class="brand-icon">📐</span>
+            <span class="brand-name">Math Admin</span>
+        </div>
+        <ul class="sidebar-nav">
+            <li><a href="#" class="nav-item active" data-tab="overview"><span class="nav-icon">📊</span> ภาพรวม</a></li>
+            <li><a href="#" class="nav-item" data-tab="courses"><span class="nav-icon">📚</span> จัดการคอร์ส</a></li>
+            <li><a href="#" class="nav-item" data-tab="lessons"><span class="nav-icon">🎬</span> จัดการบทเรียน</a></li>
+            <li><a href="#" class="nav-item" data-tab="students"><span class="nav-icon">👤</span> จัดการนักเรียน</a></li>
+            <li><a href="#" class="nav-item" data-tab="finance"><span class="nav-icon">💰</span> การเงิน</a></li>
+        </ul>
+        <div class="sidebar-footer">
+            <span id="sidebar-user-email" class="sidebar-user-email"></span>
+            <button class="sidebar-logout" onclick="adminLogout()">🚪 ออกจากระบบ</button>
+        </div>
+    </nav>
+
+    <!-- Mobile Top Bar -->
+    <div class="mobile-topbar">
+        <span class="brand-icon">📐</span>
+        <span class="brand-name">Math Admin</span>
+        <button class="mobile-logout-btn" onclick="adminLogout()">🚪</button>
+    </div>
+
+    <!-- Content -->
+    <main class="main-content">
+
+        <!-- ===== TAB: OVERVIEW ===== -->
+        <section id="tab-overview" class="tab-section active">
+            <div class="page-header">
+                <h2>ภาพรวมระบบ</h2>
+                <p>ข้อมูลสรุปทั้งหมด — Math 10 10 10</p>
+            </div>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon">📚</div>
+                    <div class="stat-info">
+                        <span class="stat-number" id="stat-courses">—</span>
+                        <span class="stat-label">คอร์สทั้งหมด</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">🎬</div>
+                    <div class="stat-info">
+                        <span class="stat-number" id="stat-lessons">—</span>
+                        <span class="stat-label">บทเรียนทั้งหมด</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">👤</div>
+                    <div class="stat-info">
+                        <span class="stat-number" id="stat-students">—</span>
+                        <span class="stat-label">นักเรียนทั้งหมด</span>
+                    </div>
+                </div>
+                <div class="stat-card accent">
+                    <div class="stat-icon">🆕</div>
+                    <div class="stat-info">
+                        <span class="stat-number" id="stat-new-today">—</span>
+                        <span class="stat-label">นักเรียนใหม่วันนี้</span>
+                    </div>
+                </div>
+                <div class="stat-card success">
+                    <div class="stat-icon">💰</div>
+                    <div class="stat-info">
+                        <span class="stat-number" id="stat-week-income">—</span>
+                        <span class="stat-label">รายได้สัปดาห์นี้ (vd_)</span>
+                    </div>
+                </div>
+            </div>
+            <div class="recent-box">
+                <h3>นักเรียนล่าสุด</h3>
+                <div id="recent-students" class="recent-list">กำลังโหลด...</div>
+            </div>
+        </section>
+
+        <!-- ===== TAB: COURSES ===== -->
+        <section id="tab-courses" class="tab-section">
+            <div class="page-header">
+                <h2>จัดการคอร์สเรียน</h2>
+                <p>เพิ่ม / แก้ไข / ลบ คอร์ส · รหัสขึ้นต้น <code>ol_</code> = สอนสด, <code>vd_</code> = วิดีโอ</p>
+            </div>
+            <div class="two-col">
+                <div class="panel">
+                    <h3 class="panel-title">➕ เพิ่มคอร์สใหม่</h3>
+                    <div class="field">
+                        <label>ชื่อคอร์ส <span class="required">*</span></label>
+                        <input type="text" id="new-course-name" placeholder="เช่น คณิต ม.4 ออนไลน์">
+                    </div>
+                    <div class="field-row">
+                        <div class="field">
+                            <label>รหัสคอร์ส (course_code) <span class="required">*</span></label>
+                            <input type="text" id="new-course-code" placeholder="เช่น ol_m4_fri หรือ vd_m5">
+                        </div>
+                        <div class="field" style="max-width:110px;">
+                            <label>ราคา (บาท) <span class="required">*</span></label>
+                            <input type="number" id="new-course-price" placeholder="0" min="0">
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label>วิชา / Subject</label>
+                        <input type="text" id="new-course-subject" placeholder="เช่น คณิตศาสตร์">
+                    </div>
+                    <div class="field-row">
+                        <div class="field">
+                            <label>วันสอน</label>
+                            <input type="text" id="new-course-day" placeholder="เช่น Friday">
+                        </div>
+                        <div class="field">
+                            <label>เวลา</label>
+                            <input type="text" id="new-course-time" placeholder="เช่น 18:00">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="addCourse()">➕ เพิ่มคอร์ส</button>
+                    <p id="course-msg" class="form-msg"></p>
+                </div>
+                <div class="panel">
+                    <h3 class="panel-title">📋 รายชื่อคอร์ส</h3>
+                    <div id="course-list" class="item-list">กำลังโหลด...</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== TAB: LESSONS ===== -->
+        <section id="tab-lessons" class="tab-section">
+            <div class="page-header">
+                <h2>จัดการบทเรียน</h2>
+                <p>เพิ่ม / แก้ไข / ลบ บทเรียน · ลาก ⣿ เพื่อเรียงลำดับ</p>
+            </div>
+            <div class="two-col">
+                <div class="panel">
+                    <h3 class="panel-title">➕ เพิ่มบทเรียน</h3>
+                    <div class="field">
+                        <label>คอร์ส <span class="required">*</span></label>
+                        <select id="lesson-course-select"><option value="">-- เลือกคอร์ส --</option></select>
+                    </div>
+                    <div class="field">
+                        <label>หัวข้อ / เรื่อง</label>
+                        <input type="text" id="topic-name" placeholder="เช่น เรื่องที่ 1: จำนวนนับ">
+                    </div>
+                    <div class="field">
+                        <label>ชื่อบทเรียน <span class="required">*</span></label>
+                        <input type="text" id="lesson-title" placeholder="เช่น บทนำพื้นฐาน">
+                    </div>
+                    <div class="field">
+                        <label>YouTube URL หรือ Video ID</label>
+                        <input type="text" id="youtube-url" placeholder="https://youtube.com/watch?v=... หรือ รหัสวิดีโอ">
+                    </div>
+                    <div class="field">
+                        <label>PDF URL</label>
+                        <input type="text" id="pdf-url" placeholder="https://drive.google.com/...">
+                    </div>
+                    <div class="field" style="max-width:120px;">
+                        <label>ลำดับ (order_no)</label>
+                        <input type="number" id="lesson-order" value="1" min="1">
+                    </div>
+                    <button class="btn btn-primary" onclick="addLesson()">💾 บันทึกบทเรียน</button>
+                    <p id="lesson-msg" class="form-msg"></p>
+                </div>
+                <div class="panel">
+                    <h3 class="panel-title">📋 รายการบทเรียน</h3>
+                    <div class="field">
+                        <label>กรองตามคอร์ส</label>
+                        <select id="lesson-filter-course" onchange="loadLessonList()">
+                            <option value="">— แสดงทั้งหมด —</option>
+                        </select>
+                    </div>
+                    <div id="lesson-list" class="item-list drag-container">กำลังโหลด...</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== TAB: STUDENTS ===== -->
+        <section id="tab-students" class="tab-section">
+            <div class="page-header">
+                <h2>จัดการนักเรียน</h2>
+                <p>เพิ่ม / แก้ไข / ลบ · กด 📋 เพื่อจัดการการลงทะเบียนคอร์ส</p>
+            </div>
+            <div class="two-col">
+                <div class="panel">
+                    <h3 class="panel-title">➕ เพิ่มนักเรียน</h3>
+                    <div class="field">
+                        <label>ชื่อ-นามสกุล</label>
+                        <input type="text" id="stu-name" placeholder="เช่น สมชาย ใจดี">
+                    </div>
+                    <div class="field">
+                        <label>อีเมล</label>
+                        <input type="email" id="stu-email" placeholder="example@email.com">
+                    </div>
+                    <div class="field">
+                        <label>เบอร์โทรศัพท์ <span class="required">*</span></label>
+                        <input type="tel" id="stu-phone" placeholder="0812345678 (ใช้เข้าระบบ)">
+                    </div>
+                    <div class="field">
+                        <label>ระดับชั้น (level)</label>
+                        <input type="text" id="stu-level" placeholder="เช่น ม.4, ม.5, ม.6">
+                    </div>
+                    <button class="btn btn-primary" onclick="addStudent()">➕ เพิ่มนักเรียน</button>
+                    <p id="student-msg" class="form-msg"></p>
+                </div>
+                <div class="panel">
+                    <h3 class="panel-title">👥 รายชื่อนักเรียน</h3>
+                    <div class="field-row" style="gap:8px; margin-bottom:12px;">
+                        <input type="text" id="stu-search" placeholder="ค้นหาชื่อ / อีเมล / เบอร์..."
+                            oninput="loadStudentList()" style="flex:1;">
+                        <select id="stu-filter-course" onchange="loadStudentList()" style="max-width:160px;">
+                            <option value="">— ทุกคอร์ส —</option>
+                        </select>
+                    </div>
+                    <div id="student-list" class="item-list">กำลังโหลด...</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== TAB: FINANCE ===== -->
+        <section id="tab-finance" class="tab-section">
+            <div class="page-header">
+                <h2>การเงิน</h2>
+                <p>รายได้รายสัปดาห์ แยกตามประเภทคอร์ส (ol_ สอนสด / vd_ วิดีโอ)</p>
+            </div>
+            <div id="finance-weeks" class="finance-weeks">กำลังโหลด...</div>
+        </section>
+
+    </main>
+
+    <!-- Mobile Bottom Navigation -->
+    <nav class="bottom-nav">
+        <a href="#" class="bottom-nav-item active" data-tab="overview">
+            <span class="bottom-nav-icon">📊</span>
+            <span class="bottom-nav-label">ภาพรวม</span>
+        </a>
+        <a href="#" class="bottom-nav-item" data-tab="courses">
+            <span class="bottom-nav-icon">📚</span>
+            <span class="bottom-nav-label">คอร์ส</span>
+        </a>
+        <a href="#" class="bottom-nav-item" data-tab="lessons">
+            <span class="bottom-nav-icon">🎬</span>
+            <span class="bottom-nav-label">บทเรียน</span>
+        </a>
+        <a href="#" class="bottom-nav-item" data-tab="students">
+            <span class="bottom-nav-icon">👤</span>
+            <span class="bottom-nav-label">นักเรียน</span>
+        </a>
+        <a href="#" class="bottom-nav-item" data-tab="finance">
+            <span class="bottom-nav-icon">💰</span>
+            <span class="bottom-nav-label">การเงิน</span>
+        </a>
+    </nav>
+</div>
+
+<!-- ===== CONFIRM MODAL ===== -->
+<div id="confirm-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+        <p id="modal-msg">ยืนยันการลบ?</p>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeModal()">ยกเลิก</button>
+            <button class="btn btn-danger" id="modal-confirm-btn">ยืนยัน ลบ</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== EDIT COURSE MODAL ===== -->
+<div id="edit-course-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-box modal-large">
+        <h3 class="modal-title">✏️ แก้ไขคอร์ส</h3>
+        <div class="field">
+            <label>ชื่อคอร์ส</label>
+            <input type="text" id="edit-course-name" placeholder="ชื่อคอร์ส">
+        </div>
+        <div class="field-row">
+            <div class="field">
+                <label>รหัสคอร์ส (course_code)</label>
+                <input type="text" id="edit-course-code" placeholder="เช่น ol_m4_fri">
+            </div>
+            <div class="field" style="max-width:110px;">
+                <label>ราคา (บาท)</label>
+                <input type="number" id="edit-course-price" placeholder="0" min="0">
+            </div>
+        </div>
+        <div class="field">
+            <label>วิชา / Subject</label>
+            <input type="text" id="edit-course-subject">
+        </div>
+        <div class="field-row">
+            <div class="field">
+                <label>วันสอน</label>
+                <input type="text" id="edit-course-day">
+            </div>
+            <div class="field">
+                <label>เวลา</label>
+                <input type="text" id="edit-course-time">
+            </div>
+        </div>
+        <p id="edit-course-msg" class="form-msg"></p>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeEditCourseModal()">ยกเลิก</button>
+            <button class="btn btn-success" onclick="saveEditCourse()">💾 บันทึก</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== EDIT LESSON MODAL ===== -->
+<div id="edit-lesson-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-box modal-large">
+        <h3 class="modal-title">✏️ แก้ไขบทเรียน</h3>
+        <input type="hidden" id="edit-lesson-id">
+        <div class="field">
+            <label>คอร์ส</label>
+            <select id="edit-lesson-course"></select>
+        </div>
+        <div class="field">
+            <label>หัวข้อ / เรื่อง</label>
+            <input type="text" id="edit-lesson-topic" placeholder="เช่น เรื่องที่ 1: จำนวนนับ">
+        </div>
+        <div class="field">
+            <label>ชื่อบทเรียน</label>
+            <input type="text" id="edit-lesson-title" placeholder="ชื่อบทเรียน">
+        </div>
+        <div class="field">
+            <label>YouTube URL หรือ Video ID</label>
+            <input type="text" id="edit-lesson-yturl" placeholder="https://youtube.com/... หรือ รหัสวิดีโอ">
+        </div>
+        <div class="field">
+            <label>PDF URL</label>
+            <input type="text" id="edit-lesson-pdf" placeholder="https://...">
+        </div>
+        <div class="field" style="max-width:120px;">
+            <label>ลำดับ</label>
+            <input type="number" id="edit-lesson-order" min="1">
+        </div>
+        <p id="edit-lesson-msg" class="form-msg"></p>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeEditLessonModal()">ยกเลิก</button>
+            <button class="btn btn-success" onclick="saveEditLesson()">💾 บันทึก</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== EDIT STUDENT MODAL ===== -->
+<div id="edit-student-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-box modal-large">
+        <h3 class="modal-title">✏️ แก้ไขข้อมูลนักเรียน</h3>
+        <input type="hidden" id="edit-stu-id">
+        <div class="field">
+            <label>ชื่อ-นามสกุล</label>
+            <input type="text" id="edit-stu-name" placeholder="ชื่อ-นามสกุล">
+        </div>
+        <div class="field">
+            <label>อีเมล</label>
+            <input type="email" id="edit-stu-email" placeholder="อีเมล">
+        </div>
+        <div class="field">
+            <label>เบอร์โทรศัพท์ <span class="required">*</span></label>
+            <input type="tel" id="edit-stu-phone" placeholder="0812345678">
+        </div>
+        <div class="field">
+            <label>ระดับชั้น</label>
+            <input type="text" id="edit-stu-level" placeholder="เช่น ม.4">
+        </div>
+        <p id="edit-stu-msg" class="form-msg"></p>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeEditStudentModal()">ยกเลิก</button>
+            <button class="btn btn-success" onclick="saveStudentModal()">💾 บันทึก</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== STUDENT DETAIL MODAL ===== -->
+<div id="student-detail-modal" class="modal-overlay" style="display:none;"
+    onclick="if(event.target===this) closeStudentDetailModal()">
+    <div class="modal-box modal-detail">
+        <div class="preview-header">
+            <h3 class="modal-title" id="detail-modal-title" style="margin-bottom:0;">ข้อมูลนักเรียน</h3>
+            <button class="icon-btn" onclick="closeStudentDetailModal()" style="font-size:20px;">✕</button>
+        </div>
+        <div id="student-detail-body" class="detail-body">กำลังโหลด...</div>
+    </div>
+</div>
+
+<!-- ===== ENROLLMENT MODAL ===== -->
+<div id="enroll-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+        <h3 class="modal-title" id="enroll-modal-title">➕ ลงทะเบียนคอร์ส</h3>
+        <div class="field">
+            <label>เลือกคอร์ส <span class="required">*</span></label>
+            <select id="enroll-course-select"><option value="">-- เลือกคอร์ส --</option></select>
+        </div>
+        <div class="field">
+            <label>วันหมดอายุ (ถ้ามี)</label>
+            <input type="date" id="enroll-expires">
+        </div>
+        <div class="field">
+            <label>หมายเหตุ</label>
+            <input type="text" id="enroll-note" placeholder="เช่น ชำระเงินแล้ว">
+        </div>
+        <p id="enroll-msg" class="form-msg"></p>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeEnrollModal()">ยกเลิก</button>
+            <button class="btn btn-success" onclick="confirmEnroll()">✅ ลงทะเบียน</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== JS MODULES ===== -->
+<script src="js/config.js" data-loaded="true"></script><!-- guard: config อาจโหลดซ้ำ ไม่มีผล เพราะตัวแปรจะ override เดิม -->
+<script src="js/overview.js"></script>
+<script src="js/courses.js"></script>
+<script src="js/lessons.js"></script>
+<script src="js/students.js"></script>
+<script src="js/finance.js"></script>
+<script>
+// ============================================================
+// main.js (inline) — ตัวประสานโมดูล + SPA Tab Switching
+// ============================================================
+
+let _pendingAction = null;
+
+// ---- Init ----
+document.addEventListener('DOMContentLoaded', async () => {
+    // แสดงอีเมลผู้ใช้บน sidebar
+    const email = window._adminSession?.user?.email || '';
+    safeSetText('sidebar-user-email', email);
+
+    // Tab navigation
+    document.querySelectorAll('.nav-item, .bottom-nav-item').forEach(link => {
+        link.addEventListener('click', e => {
+            e.preventDefault();
+            switchTab(link.dataset.tab);
+        });
+    });
+
+    // Modal overlay close on backdrop click
+    ['confirm-modal','edit-course-modal','edit-lesson-modal','edit-student-modal','enroll-modal'].forEach(id => {
+        document.getElementById(id)?.addEventListener('click', e => {
+            if (e.target.id === id) {
+                if (id === 'confirm-modal')        closeModal();
+                else if (id === 'edit-course-modal')  closeEditCourseModal();
+                else if (id === 'edit-lesson-modal')  closeEditLessonModal();
+                else if (id === 'edit-student-modal') closeEditStudentModal();
+                else if (id === 'enroll-modal')        closeEnrollModal();
+            }
+        });
+    });
+
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') {
+            closeModal(); closeEditCourseModal(); closeEditLessonModal();
+            closeEditStudentModal(); closeStudentDetailModal(); closeEnrollModal();
+        }
+    });
+
+    await initDashboard();
+});
+
+async function initDashboard() {
+    await Promise.all([
+        loadCourseDropdowns(),
+        loadOverview(),
+        loadCourseList(),
+        loadLessonList(),
+        loadStudentList(),
+    ]);
+}
+
+function switchTab(tabName) {
+    document.querySelectorAll('.tab-section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-item, .bottom-nav-item').forEach(l => l.classList.remove('active'));
+    document.getElementById('tab-' + tabName)?.classList.add('active');
+    document.querySelectorAll(`[data-tab="${tabName}"]`).forEach(el => el.classList.add('active'));
+
+    // Lazy-load หน้าที่เลือก
+    if (tabName === 'finance') loadFinance();
+}
+
+// ---- Logout ----
+async function adminLogout() {
+    await sb.auth.signOut();
+    window.location.href = '/index.html';
+}
+
+// ---- Confirm Modal ----
+function confirmDelete(message, action) {
+    _pendingAction = action;
+    document.getElementById('modal-msg').innerHTML = message;
+    document.getElementById('confirm-modal').style.display = 'flex';
+    document.getElementById('modal-confirm-btn').onclick = async () => {
+        closeModal();
+        if (_pendingAction) { await _pendingAction(); _pendingAction = null; }
+    };
+}
+function closeModal() { document.getElementById('confirm-modal').style.display = 'none'; }
+
+// ---- Shared Helpers (ใช้ร่วมกันทุกโมดูล) ----
+function safeSetText(id, text) {
+    const el = document.getElementById(id); if (el) el.textContent = text;
+}
+function escHtml(str) {
+    if (str == null) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function showMsg(el, text, type) {
+    if (!el) return;
+    el.textContent = text; el.className = 'form-msg ' + type;
+    setTimeout(() => { el.textContent = ''; el.className = 'form-msg'; }, 4000);
+}
+function formatDateShort(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'2-digit' });
+}
+</script>
+</body>
+</html>
