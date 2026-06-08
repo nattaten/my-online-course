@@ -4,42 +4,61 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>คอร์สของฉัน | Math 10 10 10</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Kanit:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="student-pages.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="student-pages.js" defer></script>
 </head>
 <body data-page="dashboard">
+
     <header class="student-topbar">
         <a class="student-brand" href="dashboard.html">
-            <span class="student-brand-icon">M</span>
+            <span class="student-brand-logo"><img src="logo.jpg" alt="Math 10 10 10"></span>
             <span>Math 10 10 10</span>
         </a>
         <button id="logout-btn" class="logout-btn" type="button">ออกจากระบบ</button>
     </header>
 
     <main class="student-page">
-        <section class="dashboard-hero">
-            <div>
-                <p class="student-kicker">Student Dashboard</p>
-                <h1>คอร์สเรียนของฉัน</h1>
-                <p id="student-email" class="student-muted">กำลังโหลดข้อมูลนักเรียน...</p>
+
+        <!-- Profile Hero -->
+        <section class="profile-hero" aria-label="ข้อมูลนักเรียน">
+            <div class="profile-avatar" id="profile-avatar" aria-hidden="true">?</div>
+            <div class="profile-info">
+                <p class="profile-kicker">Student Dashboard</p>
+                <p class="profile-name" id="profile-name">กำลังโหลด...</p>
+                <div class="profile-tags">
+                    <span class="profile-tag" id="profile-level">
+                        🎓 <span id="profile-level-text">—</span>
+                    </span>
+                    <span class="profile-tag" id="profile-phone">
+                        📱 <span id="profile-phone-text">—</span>
+                    </span>
+                </div>
             </div>
-            <div class="hero-stat">
-                <span id="course-count">0</span>
-                <small>คอร์สที่มีสิทธิ์เรียน</small>
+            <div class="profile-stat-box">
+                <span class="profile-stat-number" id="course-count">0</span>
+                <span class="profile-stat-label">คอร์สที่มีสิทธิ์เรียน</span>
             </div>
         </section>
 
-        <section class="student-section-head">
+        <!-- Section Header -->
+        <div class="section-header">
             <div>
                 <h2>เลือกคอร์สเพื่อเริ่มเรียน</h2>
-                <p class="student-muted">ระบบจะแสดงบทเรียน คลิป และเอกสาร PDF ของคอร์สที่เลือก</p>
+                <p class="section-subtitle">กดที่การ์ดเพื่อดูบทเรียนและคลิปวิดีโอทั้งหมด</p>
             </div>
+        </div>
+
+        <!-- Course Grid -->
+        <section id="course-grid" class="student-course-grid" aria-live="polite" aria-label="รายการคอร์สเรียน">
         </section>
 
-        <section id="course-grid" class="student-course-grid" aria-live="polite"></section>
-        <p id="page-message" class="student-message" role="status"></p>
+        <p id="page-message" class="student-message" role="status" aria-live="polite"></p>
     </main>
+
 </body>
 </html>

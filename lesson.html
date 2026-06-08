@@ -4,32 +4,110 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>บทเรียน | Math 10 10 10</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Kanit:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="student-pages.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="student-pages.js" defer></script>
 </head>
 <body data-page="lesson">
+
+    <!-- Top Bar -->
     <header class="student-topbar">
         <a class="student-brand" href="dashboard.html">
-            <span class="student-brand-icon">M</span>
+            <span class="student-brand-logo"><img src="logo.jpg" alt="Math 10 10 10"></span>
             <span>Math 10 10 10</span>
         </a>
         <div class="student-actions">
-            <a class="student-link-btn" href="dashboard.html">คอร์สของฉัน</a>
+            <button id="sidebar-toggle-btn" class="sidebar-toggle-btn" type="button" title="แสดง/ซ่อนรายการบทเรียน">
+                ☰ รายการบทเรียน
+            </button>
+            <a class="student-link-btn" href="dashboard.html">← คอร์สของฉัน</a>
             <button id="logout-btn" class="logout-btn" type="button">ออกจากระบบ</button>
         </div>
     </header>
 
-    <main class="student-page">
-        <section class="lesson-header">
-            <p class="student-kicker">Lesson Room</p>
-            <h2 id="course-title">บทเรียน</h2>
-            <p id="lesson-summary" class="student-muted">กำลังโหลดบทเรียน...</p>
-        </section>
+    <!-- Split Layout -->
+    <div class="lesson-split">
 
-        <section id="lesson-groups" class="student-lesson-groups" aria-live="polite"></section>
-        <p id="page-message" class="student-message" role="status"></p>
-    </main>
+        <!-- Sidebar (left) -->
+        <aside id="lesson-sidebar" class="lesson-sidebar" aria-label="รายการบทเรียน">
+            <div class="sidebar-header">
+                <p id="sidebar-course-name" class="sidebar-course-name">กำลังโหลด...</p>
+                <p id="sidebar-course-sub" class="sidebar-course-sub"></p>
+            </div>
+            <div class="sidebar-list" id="sidebar-list" role="list">
+                <!-- JS will populate -->
+            </div>
+        </aside>
+
+        <!-- Backdrop (mobile) -->
+        <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
+
+        <!-- Player Area (right) -->
+        <main class="player-area">
+
+            <!-- Meta bar -->
+            <div id="lesson-meta-bar" class="lesson-meta-bar" style="display:none;">
+                <span id="current-lesson-title" class="lesson-info-title"></span>
+                <span id="current-lesson-topic" class="lesson-info-topic"></span>
+                <span id="lesson-counter" class="lesson-counter"></span>
+            </div>
+
+            <!-- Video -->
+            <div id="video-wrap" class="video-container" style="display:none;">
+                <iframe
+                    id="lesson-video"
+                    class="student-video"
+                    src=""
+                    title="วิดีโอบทเรียน"
+                    allowfullscreen
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                ></iframe>
+            </div>
+
+            <!-- PDF-only banner -->
+            <div id="pdf-only-banner" class="pdf-only-header" style="display:none;">
+                <span class="pdf-only-icon">📄</span>
+                <div>
+                    <p id="pdf-only-title" class="pdf-only-title"></p>
+                    <p class="pdf-only-topic">บทเรียนนี้มีเฉพาะไฟล์เอกสาร PDF</p>
+                </div>
+            </div>
+
+            <!-- Empty -->
+            <div id="no-content" class="no-content" style="display:none;">
+                📭 บทเรียนนี้ยังไม่มีเนื้อหา
+            </div>
+
+            <!-- PDF Button -->
+            <div id="pdf-row" class="lesson-card-foot" style="display:none;">
+                <a id="pdf-link" class="pdf-open-btn" href="#" target="_blank" rel="noopener" style="display:none;">
+                    📄 เปิดเอกสาร PDF
+                </a>
+                <span id="pdf-missing" class="pdf-missing" style="display:none;">
+                    ไม่มีเอกสารดาวน์โหลดในบทนี้
+                </span>
+            </div>
+
+            <!-- Prev / Next nav -->
+            <div id="lesson-nav" class="lesson-nav" style="display:none;">
+                <button id="nav-prev" class="nav-btn" type="button" disabled>
+                    ← ก่อนหน้า
+                </button>
+                <span id="nav-counter" class="nav-counter"></span>
+                <button id="nav-next" class="nav-btn nav-btn-next" type="button" disabled>
+                    ถัดไป →
+                </button>
+            </div>
+
+            <p id="page-message" class="student-message" role="status" aria-live="polite">
+                กำลังโหลดบทเรียน...
+            </p>
+        </main>
+    </div>
+
 </body>
 </html>

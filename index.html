@@ -3,36 +3,94 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Math 10 10 10</title>
+    <title>Math 10 10 10 — เข้าสู่ระบบ</title>
+    <meta name="description" content="Math 10 10 10 — ระบบเรียนออนไลน์คณิตศาสตร์ระดับพรีเมียม">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Kanit:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="script.js" defer></script>
 </head>
 <body>
-    <main id="login-section" class="login-wrap">
+    <main class="login-wrap">
         <section class="login-box" aria-labelledby="login-title">
-            <div class="login-logo">M10</div>
-            <h1 id="login-title">Math 10 10 10</h1>
-            <p class="login-subtitle">เข้าสู่ระบบด้วยเบอร์โทรศัพท์ที่ลงทะเบียนไว้</p>
+            <div class="login-logo-img">
+                <img src="logo.jpg" alt="Math 10 10 10" width="120" height="120">
+            </div>
+            <p class="login-tagline">ระบบเรียนออนไลน์</p>
 
-            <form id="login-form">
-                <input
-                    type="tel"
-                    id="phone"
-                    name="phone"
-                    inputmode="tel"
-                    autocomplete="tel"
-                    placeholder="เบอร์โทรศัพท์ เช่น 0812345678"
-                    required
-                >
-
-                <button id="login-btn" type="submit">
-                    <span id="btn-text">เข้าสู่บทเรียน</span>
-                    <span id="btn-loader" style="display:none;">กำลังตรวจสอบ...</span>
+            <div class="auth-tabs" role="tablist">
+                <button class="auth-tab active" id="tab-login" type="button" role="tab" aria-selected="true">
+                    เข้าสู่ระบบ
                 </button>
-            </form>
+                <button class="auth-tab" id="tab-signup" type="button" role="tab" aria-selected="false">
+                    สมัครสมาชิก
+                </button>
+            </div>
 
-            <p id="error-msg" class="error" role="status"></p>
+            <!-- ฟอร์มเข้าสู่ระบบ -->
+            <div id="form-login" role="tabpanel">
+                <p class="login-subtitle">เข้าสู่ระบบด้วยเบอร์โทรศัพท์ที่ลงทะเบียนไว้</p>
+                <form id="login-form" novalidate>
+                    <input
+                        type="tel"
+                        id="phone"
+                        name="phone"
+                        inputmode="tel"
+                        autocomplete="tel"
+                        placeholder="เบอร์โทรศัพท์ เช่น 0812345678"
+                        required
+                    >
+                    <button id="login-btn" class="btn-primary" type="submit">
+                        <span id="btn-text">เข้าสู่บทเรียน →</span>
+                        <span id="btn-loader" style="display:none;">กำลังตรวจสอบ...</span>
+                    </button>
+                </form>
+            </div>
+
+            <!-- ฟอร์มสมัครสมาชิก -->
+            <div id="form-signup" style="display:none;" role="tabpanel">
+                <p class="login-subtitle">กรอกข้อมูลเพื่อสร้างบัญชีนักเรียนใหม่</p>
+                <form id="signup-form" novalidate>
+                    <input
+                        type="text"
+                        id="signup-name"
+                        placeholder="ชื่อ-นามสกุล *"
+                        autocomplete="name"
+                        required
+                    >
+                    <div class="select-wrapper">
+                        <select id="signup-level" required>
+                            <option value="">ระดับชั้น *</option>
+                            <option value="ม.4">ม.4</option>
+                            <option value="ม.5">ม.5</option>
+                            <option value="ม.6">ม.6</option>
+                        </select>
+                    </div>
+                    <input
+                        type="email"
+                        id="signup-email"
+                        placeholder="อีเมล (ไม่บังคับ)"
+                        autocomplete="email"
+                    >
+                    <input
+                        type="tel"
+                        id="signup-phone"
+                        inputmode="tel"
+                        autocomplete="tel"
+                        placeholder="เบอร์โทรศัพท์ *"
+                        required
+                    >
+                    <button id="signup-btn" class="btn-success" type="submit">
+                        <span id="signup-btn-text">ยืนยันสมัครสมาชิก →</span>
+                        <span id="signup-btn-loader" style="display:none;">กำลังสมัคร...</span>
+                    </button>
+                </form>
+            </div>
+
+            <p id="error-msg" class="error" role="alert" aria-live="assertive"></p>
+            <p id="success-msg" class="success-msg" role="status" aria-live="polite"></p>
         </section>
     </main>
 </body>
