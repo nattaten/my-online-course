@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // auth-check.js - Math 10 10 10 Admin security gate
 // Renders the dashboard only after an approved Supabase session.
 // ============================================================
@@ -49,10 +49,20 @@
                     <div class="login-icon">⚙️</div>
                     <h1>Admin Panel</h1>
                     <p class="login-sub">Math 10 10 10 - เข้าสู่ระบบผู้ดูแล</p>
+                    
+                    <div id="login-webcam-area" style="display:none; margin-bottom:15px; border-radius:12px; overflow:hidden; border:2px solid var(--border); position:relative; aspect-ratio:4/3; background:#000;">
+                        <video id="login-video" style="width:100%; height:100%; object-fit:cover; transform:scaleX(-1);" autoplay muted playsinline></video>
+                        <div class="face-scan-overlay" style="position:absolute; inset:0; border:2px solid var(--accent); border-radius:50%; margin:15px 50px; box-shadow:0 0 0 9999px rgba(0,0,0,0.5); pointer-events:none;"></div>
+                        <div class="face-scan-laser" style="position:absolute; left:50px; right:50px; height:2px; background:var(--accent); top:15px; animation:laserMove 2s infinite ease-in-out; pointer-events:none; box-shadow:0 0 8px var(--accent);"></div>
+                        <span id="login-scan-status" style="position:absolute; bottom:0; left:0; right:0; text-align:center; color:#fff; font-size:12px; font-weight:600; text-shadow:0 1px 4px rgba(0,0,0,0.8); background:rgba(0,0,0,0.45); padding:6px 0;">กำลังเริ่มกล้อง...</span>
+                    </div>
+
                     <input id="admin-login-email" type="email" placeholder="อีเมลแอดมิน" autocomplete="email" required>
                     <input id="admin-login-password" type="password" placeholder="รหัสผ่าน" autocomplete="current-password" required>
                     <p class="login-err" id="admin-login-error" role="alert"></p>
                     <button id="admin-login-btn" type="submit">เข้าสู่ระบบ</button>
+                    
+                    <button type="button" id="admin-face-login-btn" class="btn-face-login" onclick="window.toggleFaceLogin(this)">📷 สแกนใบหน้าเข้าระบบ</button>
                 </form>
             </main>`;
 
@@ -61,6 +71,7 @@
     }
 
     function renderDashboard(session) {
+        if (window.stopFaceLoginScan) window.stopFaceLoginScan();
         const template = document.getElementById('dashboard-template');
         const appRoot = document.getElementById('app-root');
         const authRoot = document.getElementById('auth-root');

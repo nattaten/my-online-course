@@ -1,23 +1,23 @@
-﻿@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
 :root {
-    --bg:         #eefbf8;
+    --bg:         #f2faf9; /* Soft fresh Tiffany-tinted off-white */
     --surface:    #ffffff;
-    --surface2:   #DBF5F0;
-    --border:     #A4E5E0;
-    --accent:     #0C6170;
-    --accent-d:   #084b56;
-    --accent-g:   rgba(55,190,176,0.16);
-    --success:    #0C6170;
-    --success-g:  rgba(12,97,112,0.11);
-    --danger:     #c24b4b;
-    --warn:       #37BEB0;
-    --text:       #092f35;
-    --text-muted: #5b7c7d;
-    --text-dim:   #244e54;
+    --surface2:   #e2f6f4; /* Light fresh Tiffany background */
+    --border:     #bceae5; /* Soft Tiffany line border */
+    --accent:     #0abab5; /* Premium Tiffany Blue */
+    --accent-d:   #009490; /* Darker contrast Tiffany Blue for typography/buttons */
+    --accent-g:   rgba(10, 186, 181, 0.08); /* Transparent glow */
+    --success:    #0abab5; /* Success aligns with theme */
+    --success-g:  rgba(10, 186, 181, 0.08);
+    --danger:     #d9534f;
+    --warn:       #009490;
+    --text:       #0f3331; /* Deep, readable spruce-teal */
+    --text-muted: #628785; /* Soft teal-grey */
+    --text-dim:   #215250; /* Medium contrast teal */
     --sidebar-w:  240px;
     --bottom-h:   64px;
-    --radius:     10px;
+    --radius:     12px; /* Smoother modern corners */
     --mono:       'IBM Plex Mono', monospace;
 }
 
@@ -913,46 +913,55 @@ body.admin-authenticated #auth-root {
 #tab-students .panel > .btn-primary {
     margin-top: 10px;
 }
-
-/* Enrollment checkbox group */
 .course-checkbox-group {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    max-height: 320px;
+    gap: 12px;
+    max-height: 380px;
     overflow-y: auto;
-    padding-right: 2px;
+    padding-right: 4px;
+    margin-top: 8px;
 }
 .course-checkbox-item {
     display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 10px 12px;
-    background: var(--surface2);
+    flex-direction: column;
+    padding: 14px 16px;
+    background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius);
     cursor: pointer;
-    transition: border-color 0.15s, background 0.15s;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 2px 4px rgba(10, 186, 181, 0.02);
 }
 .course-checkbox-item:hover {
     border-color: var(--accent);
     background: var(--accent-g);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(10, 186, 181, 0.05);
 }
-.course-checkbox-item input[type="checkbox"] {
-    width: auto;
+.course-checkbox-item.is-enrolled {
+    border-color: var(--accent);
+    background: var(--accent-g);
+    box-shadow: 0 4px 12px rgba(10, 186, 181, 0.08);
+}
+.course-checkbox-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    width: 100%;
+}
+.course-checkbox-header input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
     margin-top: 3px;
     accent-color: var(--accent);
     flex-shrink: 0;
+    cursor: pointer;
 }
 .course-checkbox-label {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    min-width: 0;
-}
-.course-checkbox-name {
-    color: var(--text);
-    font-size: 13px;
     font-weight: 600;
 }
 .course-checkbox-meta {
@@ -972,16 +981,16 @@ body.admin-authenticated #auth-root {
    Readability polish v3
    =============================== */
 :root {
-    --bg: #eefbf8;
-    --surface: #ffffff;
-    --surface2: #DBF5F0;
-    --border: #A4E5E0;
-    --accent: #0C6170;
-    --accent-d: #084b56;
-    --accent-g: rgba(55,190,176,0.16);
-    --text: #092f35;
-    --text-dim: #244e54;
-    --text-muted: #5b7c7d;
+    --bg:         #f2faf9;
+    --surface:    #ffffff;
+    --surface2:   #e2f6f4;
+    --border:     #bceae5;
+    --accent:     #0abab5;
+    --accent-d:   #009490;
+    --accent-g:   rgba(10, 186, 181, 0.08);
+    --text:       #0f3331;
+    --text-dim:   #215250;
+    --text-muted: #628785;
 }
 
 body {
@@ -1057,29 +1066,7 @@ input, select, textarea {
 
 /* Student enrollment modal */
 #enroll-modal .modal-box {
-    max-width: 560px;
-}
-.course-checkbox-group {
-    gap: 10px;
-    max-height: 430px;
-}
-.course-checkbox-item {
-    gap: 13px;
-    padding: 14px 15px;
-    border-radius: 10px;
-}
-.course-checkbox-item input[type="checkbox"] {
-    width: 20px;
-    height: 20px;
-    margin-top: 2px;
-}
-.course-checkbox-name {
-    font-size: 16px;
-    line-height: 1.35;
-}
-.course-checkbox-meta {
-    font-size: 13px;
-    color: var(--text-dim);
+    max-width: 580px;
 }
 
 /* Finance readability */
@@ -1710,4 +1697,50 @@ textarea,
     .finance-detail-inner {
         padding: 10px 14px 13px;
     }
+}
+
+/* ===== FACE RECOGNITION STYLE ===== */
+@keyframes laserMove {
+    0%, 100% { top: 20px; }
+    50% { top: calc(100% - 22px); }
+}
+
+.face-scan-container {
+    position: relative;
+    box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.8);
+}
+
+.face-status-text {
+    font-size: 13px;
+    font-weight: 600;
+    text-align: center;
+    color: var(--text-dim);
+    margin-top: 8px;
+    margin-bottom: 12px;
+}
+
+/* Face Scan Login Button styling */
+.btn-face-login {
+    width: 100%;
+    margin-top: 10px;
+    padding: 12px;
+    background: transparent;
+    border: 2px solid var(--accent);
+    color: var(--accent-d);
+    border-radius: var(--radius);
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.2s;
+}
+
+.btn-face-login:hover {
+    background: var(--accent-g);
+    border-color: var(--accent-d);
+    color: var(--accent-d);
 }

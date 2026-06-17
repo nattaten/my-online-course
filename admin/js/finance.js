@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // finance.js - Weekly + monthly finance dashboard
 // Rules:
 //   vd_* = enrollments created in the period * course price, using enrollments.enrolled_at
@@ -20,8 +20,8 @@ async function loadFinance() {
 
         const [coursesRes, enrollmentsRes, lessonsRes] = await Promise.all([
             sb.from('courses').select('id, course_code, name, subject, schedule_day, schedule_time, price, is_active').order('id', { ascending: true }),
-            sb.from('enrollments').select('id, user_id, course_code, sort_order, enrolled_at').gte('enrolled_at', oldestStart.toISOString()).order('enrolled_at', { ascending: false }),
-            sb.from('lessons').select('id, course_code, lesson_title, created_at').gte('created_at', oldestStart.toISOString()).order('created_at', { ascending: false }),
+            sb.from('enrollments').select('id, user_id, course_code, sort_order, enrolled_at, expires_at, note').gte('enrolled_at', oldestStart.toISOString()).order('enrolled_at', { ascending: false }),
+            sb.from('lessons').select('id, course_code, lesson_title, created_at, pdf_url').gte('created_at', oldestStart.toISOString()).order('created_at', { ascending: false }),
         ]);
 
         if (coursesRes.error) throw coursesRes.error;
@@ -75,9 +75,14 @@ function buildFinanceModel(courses, enrollments, lessons) {
         .map(enrollment => ({ enrollment, course: courseMap.get(enrollment.course_code) }))
         .filter(item => item.course?.course_code?.startsWith('vd_') && item.enrollment.enrolled_at);
 
+    // Only count live lessons that have a solution sheet (pdf_url is not null and not empty)
     const olLessons = lessons
         .map(lesson => ({ lesson, course: courseMap.get(lesson.course_code) }))
-        .filter(item => item.course?.course_code?.startsWith('ol_'));
+        .filter(item => {
+            return item.course?.course_code?.startsWith('ol_') && 
+                   item.lesson.pdf_url && 
+                   item.lesson.pdf_url.trim() !== '';
+        });
 
     return { courses, enrollments, lessons, courseMap, vdEnrollments, olLessons };
 }
@@ -87,9 +92,24 @@ function buildPeriodSummary(period, model, isCurrent) {
     const vdGroups = new Map();
 
     model.olLessons.forEach(({ lesson, course }) => {
-        const date = new Date(lesson.created_at);
+        const date = lesson.created_at ? new Date(lesson.created_at) : new Date();
         if (date < period.start || date > period.end) return;
-        addFinanceGroupRow(olGroups, course, 'ol', 'ครั้งที่สอน');
+
+        // Calculate the number of active students enrolled in this course at the time of the lesson
+        const activeCount = model.enrollments.filter(e => {
+            if (e.course_code !== course.course_code) return false;
+            
+            const enrollDate = e.enrolled_at ? new Date(e.enrolled_at) : null;
+            if (!enrollDate || enrollDate > date) return false;
+            
+            if (e.expires_at) {
+                const expireDate = new Date(e.expires_at);
+                if (expireDate < date) return false;
+            }
+            return true;
+        }).length;
+
+        addFinanceGroupRow(olGroups, course, 'ol', 'ครั้งที่สอน', activeCount);
     });
 
     model.vdEnrollments.forEach(({ enrollment, course }) => {
@@ -116,19 +136,29 @@ function buildPeriodSummary(period, model, isCurrent) {
     };
 }
 
-function addFinanceGroupRow(groups, course, kind, countLabel) {
+function addFinanceGroupRow(groups, course, kind, countLabel, activeCount = 1) {
     const current = groups.get(course.course_code) || {
         kind,
         code: course.course_code,
         name: course.name || course.course_code,
         count: 0,
+        activeStudentTotal: 0,
         price: Number(course.price || 0),
         amount: 0,
         detail: '',
     };
-    current.count += 1;
-    current.amount = current.count * current.price;
-    current.detail = `${current.count.toLocaleString('th-TH')} ${countLabel} × ${formatBaht(current.price)}`;
+
+    if (kind === 'ol') {
+        current.count += 1; // Number of lessons taught
+        current.activeStudentTotal += activeCount; // Sum of active students
+        current.amount += activeCount * current.price;
+        current.detail = `${current.count.toLocaleString('th-TH')} ${countLabel} (นักเรียนรวม ${current.activeStudentTotal.toLocaleString('th-TH')} คน) × ${formatBaht(current.price)}`;
+    } else {
+        current.count += 1; // Number of registrations
+        current.amount = current.count * current.price;
+        current.detail = `${current.count.toLocaleString('th-TH')} ${countLabel} × ${formatBaht(current.price)}`;
+    }
+
     groups.set(course.course_code, current);
 }
 
@@ -146,7 +176,7 @@ function renderFinanceHero(model, currentWeek, currentMonth) {
             <div class="finance-hero-main">
                 <span class="finance-eyebrow">Finance Dashboard</span>
                 <h3>${formatBaht(totalThisWeek)}</h3>
-                <p>ยอดรวมสัปดาห์นี้: </p>
+                <p>ยอดรวมสัปดาห์นี้: ${escHtml(currentWeek.label)}</p>
             </div>
             <div class="finance-hero-metrics">
                 ${renderMetric('สอนสดสัปดาห์นี้', formatBaht(currentWeek.olTotal), `${olThisWeekCount.toLocaleString('th-TH')} ครั้งที่สอน`)}

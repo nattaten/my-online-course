@@ -33,20 +33,47 @@ async function loadStats() {
 
     safeSetText('stat-new-today', todayCount ?? '0');
 
-    // รายได้สัปดาห์นี้ (จาก enrollments + ราคาคอร์ส)
+    // รายได้สัปดาห์นี้ (จาก enrollments vd_ + บทเรียน ol_ ที่สอนเสร็จ/แนบเฉลยแล้ว)
     const weekStart = getWeekStart(new Date());
-    const { data: weekEnrollments } = await sb
-        .from('enrollments')
-        .select('course_code, enrolled_at')
-        .gte('enrolled_at', weekStart.toISOString());
+    
+    const [enrollmentsRes, lessonsRes] = await Promise.all([
+        sb.from('enrollments').select('course_code, enrolled_at, expires_at'),
+        sb.from('lessons').select('course_code, created_at, pdf_url').gte('created_at', weekStart.toISOString())
+    ]);
 
-    if (weekEnrollments?.length && window._allCourses?.length) {
+    const allEnrollments = enrollmentsRes.data || [];
+    const weekLessons = lessonsRes.data || [];
+
+    if (window._allCourses?.length) {
         const priceMap = {};
         window._allCourses.forEach(c => { priceMap[c.course_code] = c.price || 0; });
-        const weekIncome = weekEnrollments
-            .filter(e => e.course_code?.startsWith('vd_'))
+        
+        // 1. vd_ revenue (enrolled in the current week)
+        const vdIncome = allEnrollments
+            .filter(e => e.course_code?.startsWith('vd_') && e.enrolled_at && new Date(e.enrolled_at) >= weekStart)
             .reduce((sum, e) => sum + (priceMap[e.course_code] || 0), 0);
-        safeSetText('stat-week-income', '฿' + weekIncome.toLocaleString());
+
+        // 2. ol_ revenue (live lessons taught/pdf attached in the current week)
+        let olIncome = 0;
+        weekLessons.forEach(lesson => {
+            if (lesson.course_code?.startsWith('ol_') && lesson.pdf_url && lesson.pdf_url.trim() !== '') {
+                const lessonDate = lesson.created_at ? new Date(lesson.created_at) : new Date();
+                const activeCount = allEnrollments.filter(e => {
+                    if (e.course_code !== lesson.course_code) return false;
+                    const enrollDate = e.enrolled_at ? new Date(e.enrolled_at) : null;
+                    if (!enrollDate || enrollDate > lessonDate) return false;
+                    if (e.expires_at) {
+                        const expireDate = new Date(e.expires_at);
+                        if (expireDate < lessonDate) return false;
+                    }
+                    return true;
+                }).length;
+                olIncome += activeCount * (priceMap[lesson.course_code] || 0);
+            }
+        });
+
+        const totalWeekIncome = vdIncome + olIncome;
+        safeSetText('stat-week-income', '฿' + totalWeekIncome.toLocaleString());
     } else {
         safeSetText('stat-week-income', '฿0');
     }

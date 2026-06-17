@@ -52,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 user_id,
                 course_code,
                 sort_order,
+                expires_at,
                 courses (
                     course_code,
                     name,
@@ -68,7 +69,15 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const enrollments = data || [];
+        const now = new Date();
+        const enrollments = (data || []).filter(e => {
+            if (e.expires_at) {
+                const expireDate = new Date(e.expires_at);
+                if (expireDate < now) return false;
+            }
+            return true;
+        });
+        
         setText('course-count', String(enrollments.length));
         await renderCourses(enrollments);
         showMessage('');
@@ -151,13 +160,22 @@ document.addEventListener('DOMContentLoaded', () => {
         // ตรวจสิทธิ์
         const { data: enrollment, error: enrollErr } = await supabaseClient
             .from('enrollments')
-            .select('id')
+            .select('id, expires_at')
             .eq('user_id', currentStudent.id)
             .eq('course_code', courseCode)
             .maybeSingle();
 
         if (enrollErr) { showMessage('ตรวจสอบสิทธิ์ไม่สำเร็จ: ' + enrollErr.message); return; }
         if (!enrollment) { showMessage('บัญชีนี้ไม่มีสิทธิ์เข้าคอร์สนี้'); return; }
+
+        // ตรวจสอบวันหมดอายุ
+        if (enrollment.expires_at) {
+            const expireDate = new Date(enrollment.expires_at);
+            if (expireDate < new Date()) {
+                showMessage('คอร์สเรียนนี้หมดอายุแล้ว ไม่สามารถเข้าเรียนได้');
+                return;
+            }
+        }
 
         // โหลดข้อมูลพร้อมกัน (course info + lessons + progress)
         const [courseRes, lessonsRes, progressRes] = await Promise.all([

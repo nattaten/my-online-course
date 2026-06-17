@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // students.js — จัดการนักเรียน + การลงทะเบียนคอร์ส (Enrollment)
 // ใช้ตาราง: users, enrollments, courses
 // ============================================================
@@ -208,14 +208,14 @@ function closeStudentDetailModal() {
     document.getElementById('student-detail-modal').style.display = 'none';
 }
 
-// ---- Enrollment Modal (multi-course replacement) ----
+// ---- Enrollment Modal (smart multi-course sync) ----
 let _enrollUserId = null;
 let _enrollUserName = '';
 
 async function fetchActiveCourses() {
     const { data, error } = await sb
         .from('courses')
-        .select('id, course_code, name, subject, schedule_day, schedule_time, is_active')
+        .select('id, course_code, name, subject, schedule_day, schedule_time, price, is_active')
         .eq('is_active', true)
         .order('id', { ascending: true });
 
@@ -223,15 +223,49 @@ async function fetchActiveCourses() {
     return data || [];
 }
 
-async function fetchUserEnrollmentCodes(userId) {
+async function fetchUserEnrollmentsMap(userId) {
     const { data, error } = await sb
         .from('enrollments')
-        .select('course_code')
+        .select('course_code, enrolled_at, expires_at, note')
         .eq('user_id', userId);
 
     if (error) throw error;
-    return new Set((data || []).map(row => row.course_code));
+    const map = new Map();
+    (data || []).forEach(row => {
+        map.set(row.course_code, row);
+    });
+    return map;
 }
+
+// Global click and change handlers
+window.handleCourseCardClick = function(event, card) {
+    if (event.target.tagName === 'INPUT' || event.target.closest('.course-enrollment-inputs')) {
+        return;
+    }
+    const checkbox = card.querySelector('.course-checkbox');
+    if (checkbox) {
+        checkbox.checked = !checkbox.checked;
+        window.handleCourseCheckboxChange(checkbox);
+    }
+};
+
+window.handleCourseCheckboxChange = function(checkbox, event) {
+    if (event) event.stopPropagation();
+    const card = checkbox.closest('.course-checkbox-item');
+    if (!card) return;
+
+    if (checkbox.checked) {
+        card.classList.add('is-enrolled');
+        card.querySelectorAll('.course-enrollment-inputs input').forEach(input => {
+            input.disabled = false;
+        });
+    } else {
+        card.classList.remove('is-enrolled');
+        card.querySelectorAll('.course-enrollment-inputs input').forEach(input => {
+            input.disabled = true;
+        });
+    }
+};
 
 async function openEnrollModal(userId, userName) {
     _enrollUserId = userId;
@@ -248,9 +282,9 @@ async function openEnrollModal(userId, userName) {
     if (modal) modal.style.display = 'flex';
 
     try {
-        const [activeCourses, enrolledCodes] = await Promise.all([
+        const [activeCourses, enrolledMap] = await Promise.all([
             fetchActiveCourses(),
-            fetchUserEnrollmentCodes(userId),
+            fetchUserEnrollmentsMap(userId),
         ]);
 
         window._activeCourses = activeCourses;
@@ -262,16 +296,43 @@ async function openEnrollModal(userId, userName) {
         }
 
         container.innerHTML = activeCourses.map(course => {
-            const checked = enrolledCodes.has(course.course_code) ? 'checked' : '';
+            const hasEnroll = enrolledMap.has(course.course_code);
+            const checked = hasEnroll ? 'checked' : '';
+            const cardClass = hasEnroll ? 'is-enrolled' : '';
+            const disabledAttr = hasEnroll ? '' : 'disabled';
+            
+            const existing = enrolledMap.get(course.course_code) || {};
+            let expiresVal = '';
+            if (existing.expires_at) {
+                const d = new Date(existing.expires_at);
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const date = String(d.getDate()).padStart(2, '0');
+                expiresVal = `${year}-${month}-${date}`;
+            }
+            const noteVal = existing.note || '';
+
             const schedule = [course.schedule_day, course.schedule_time].filter(Boolean).join(' ');
             return `
-                <label class="course-checkbox-item">
-                    <input type="checkbox" class="course-checkbox" value="${escHtml(course.course_code)}" ${checked}>
-                    <span class="course-checkbox-label">
-                        <span class="course-checkbox-name">${escHtml(course.name || course.course_code)}</span>
-                        <span class="course-checkbox-meta mono-text">${escHtml(course.course_code)}${schedule ? ' · ' + escHtml(schedule) : ''}</span>
-                    </span>
-                </label>`;
+                <div class="course-checkbox-item ${cardClass}" onclick="window.handleCourseCardClick(event, this)">
+                    <div class="course-checkbox-header">
+                        <input type="checkbox" class="course-checkbox" value="${escHtml(course.course_code)}" ${checked} onchange="window.handleCourseCheckboxChange(this, event)">
+                        <div class="course-checkbox-label">
+                            <span class="course-checkbox-name">${escHtml(course.name || course.course_code)}</span>
+                            <span class="course-checkbox-meta mono-text">${escHtml(course.course_code)}${schedule ? ' · ' + escHtml(schedule) : ''} · ฿${(course.price || 0).toLocaleString()}</span>
+                        </div>
+                    </div>
+                    <div class="course-enrollment-inputs">
+                        <div class="field-compact">
+                            <label>วันหมดอายุ</label>
+                            <input type="date" class="course-expires-input" value="${expiresVal}" ${disabledAttr} onclick="event.stopPropagation()">
+                        </div>
+                        <div class="field-compact">
+                            <label>หมายเหตุ</label>
+                            <input type="text" class="course-note-input" value="${escHtml(noteVal)}" placeholder="เช่น จ่ายแล้ว" ${disabledAttr} onclick="event.stopPropagation()">
+                        </div>
+                    </div>
+                </div>`;
         }).join('');
     } catch (error) {
         if (container) container.innerHTML = `<div class="error-state">โหลดคอร์สไม่สำเร็จ: ${escHtml(error.message)}</div>`;
@@ -287,13 +348,28 @@ function closeEnrollModal() {
 async function confirmEnroll() {
     const msg = document.getElementById('enroll-msg');
     const btn = document.getElementById('enroll-confirm-btn');
-    const checkedCodes = [...document.querySelectorAll('#enroll-course-checkboxes .course-checkbox:checked')]
-        .map(cb => cb.value);
 
     if (!_enrollUserId) {
         showMsg(msg, 'ไม่พบนักเรียนที่ต้องการบันทึก', 'error');
         return;
     }
+
+    // Read selected courses and inputs
+    const selectedItems = [];
+    document.querySelectorAll('#enroll-course-checkboxes .course-checkbox-item').forEach(card => {
+        const checkbox = card.querySelector('.course-checkbox');
+        if (checkbox && checkbox.checked) {
+            const courseCode = checkbox.value;
+            const expiresInput = card.querySelector('.course-expires-input');
+            const noteInput = card.querySelector('.course-note-input');
+            
+            selectedItems.push({
+                course_code: courseCode,
+                expires_at: expiresInput?.value ? new Date(expiresInput.value).toISOString() : null,
+                note: noteInput?.value.trim() || null
+            });
+        }
+    });
 
     try {
         if (btn) {
@@ -301,26 +377,59 @@ async function confirmEnroll() {
             btn.textContent = 'กำลังบันทึก...';
         }
 
-        const { error: deleteError } = await sb
-            .from('enrollments')
-            .delete()
-            .eq('user_id', _enrollUserId);
-        if (deleteError) throw deleteError;
+        // Get existing enrollments
+        const existingMap = await fetchUserEnrollmentsMap(_enrollUserId);
+        const selectedCodes = new Set(selectedItems.map(item => item.course_code));
 
-        if (checkedCodes.length) {
-            const rows = checkedCodes.map((courseCode, index) => ({
-                user_id: _enrollUserId,
-                course_code: courseCode,
-                sort_order: index + 1,
-            }));
+        // 1. Delete removed enrollments
+        const deleteCodes = [...existingMap.keys()].filter(code => !selectedCodes.has(code));
+        if (deleteCodes.length > 0) {
+            const { error: deleteError } = await sb
+                .from('enrollments')
+                .delete()
+                .eq('user_id', _enrollUserId)
+                .in('course_code', deleteCodes);
+            if (deleteError) throw deleteError;
+        }
 
+        // 2. Perform updates and inserts
+        const insertRows = [];
+        let sortOrder = 1;
+
+        for (const item of selectedItems) {
+            if (existingMap.has(item.course_code)) {
+                // Update existing: preserve enrolled_at, update expires_at and note
+                const { error: updateError } = await sb
+                    .from('enrollments')
+                    .update({
+                        expires_at: item.expires_at,
+                        note: item.note,
+                        sort_order: sortOrder++
+                    })
+                    .eq('user_id', _enrollUserId)
+                    .eq('course_code', item.course_code);
+                if (updateError) throw updateError;
+            } else {
+                // Insert new: set enrolled_at to now
+                insertRows.push({
+                    user_id: _enrollUserId,
+                    course_code: item.course_code,
+                    expires_at: item.expires_at,
+                    note: item.note,
+                    sort_order: sortOrder++,
+                    enrolled_at: new Date().toISOString()
+                });
+            }
+        }
+
+        if (insertRows.length > 0) {
             const { error: insertError } = await sb
                 .from('enrollments')
-                .insert(rows);
+                .insert(insertRows);
             if (insertError) throw insertError;
         }
 
-        showMsg(msg, `บันทึกคอร์ส ${checkedCodes.length} รายการสำเร็จ`, 'success');
+        showMsg(msg, `บันทึกคอร์สเรียน ${selectedItems.length} รายการสำเร็จ`, 'success');
         await loadStudentList();
         setTimeout(closeEnrollModal, 700);
     } catch (error) {
@@ -328,16 +437,17 @@ async function confirmEnroll() {
     } finally {
         if (btn) {
             btn.disabled = false;
-            btn.textContent = 'บันทึก';
+            btn.textContent = '💾 บันทึก';
         }
     }
 }
 
 async function unenrollStudent(enrollmentId, userId) {
-    if (!confirm('ยืนยันการยกเลิกคอร์สนี้?')) return;
-    const { error } = await sb.from('enrollments').delete().eq('id', enrollmentId);
-    if (error) { alert('ยกเลิกไม่สำเร็จ: ' + error.message); return; }
-    const { data: student } = await sb.from('users').select('*').eq('id', userId).single();
-    if (student) await openStudentDetailModal(student);
-    await loadStudentList();
+    confirmDelete('ยืนยันการยกเลิกคอร์สนี้?', async () => {
+        const { error } = await sb.from('enrollments').delete().eq('id', enrollmentId);
+        if (error) { alert('ยกเลิกไม่สำเร็จ: ' + error.message); return; }
+        const { data: student } = await sb.from('users').select('*').eq('id', userId).single();
+        if (student) await openStudentDetailModal(student);
+        await loadStudentList();
+    });
 }

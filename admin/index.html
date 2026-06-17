@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="th">
 <head>
     <meta charset="UTF-8">
@@ -10,7 +10,9 @@
 
     <!-- ⚡ โหลด Supabase และ config ก่อนทุกอย่าง -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     <script src="js/config.js"></script>
+    <script src="js/face-auth.js"></script>
     <!-- 🔒 auth-check ต้องมาหลัง config.js (ต้องการ sb และ APP_CONFIG) -->
     <script src="js/auth-check.js"></script>
 </head>
@@ -36,9 +38,10 @@
             <li><a href="#" class="nav-item" data-tab="students"><span class="nav-icon">👤</span> จัดการนักเรียน</a></li>
             <li><a href="#" class="nav-item" data-tab="finance"><span class="nav-icon">💰</span> การเงิน</a></li>
         </ul>
-        <div class="sidebar-footer">
-            <span id="sidebar-user-email" class="sidebar-user-email"></span>
-            <button class="sidebar-logout" onclick="adminLogout()">🚪 ออกจากระบบ</button>
+        <div class="sidebar-footer" style="display:flex; flex-direction:column; gap:6px; padding:15px 10px;">
+            <span id="sidebar-user-email" class="sidebar-user-email" style="margin-bottom:4px;"></span>
+            <button class="sidebar-logout" style="margin:0; width:100%; border-color:var(--accent); color:var(--accent);" onclick="window.openFaceRegisterModal()">📷 ลงทะเบียนใบหน้า</button>
+            <button class="sidebar-logout" style="margin:0; width:100%;" onclick="adminLogout()">🚪 ออกจากระบบ</button>
         </div>
     </nav>
 
@@ -411,23 +414,41 @@
 <!-- ===== ENROLLMENT MODAL ===== -->
 <div id="enroll-modal" class="modal-overlay" style="display:none;">
     <div class="modal-box">
-        <h3 class="modal-title" id="enroll-modal-title">➕ ลงทะเบียนคอร์ส</h3>
-        <div class="field">
-            <label>เลือกคอร์สที่เปิดอยู่ <span class="required">*</span></label>
+        <h3 class="modal-title" id="enroll-modal-title">➕ จัดการคอร์สเรียน</h3>
+        <div class="field" style="margin-bottom: 0;">
+            <label>เลือกคอร์สเรียนที่เปิดอยู่ <span class="required">*</span></label>
             <div id="enroll-course-checkboxes" class="course-checkbox-group"></div>
         </div>
-        <div class="field">
-            <label>วันหมดอายุ (ถ้ามี)</label>
-            <input type="date" id="enroll-expires">
-        </div>
-        <div class="field">
-            <label>หมายเหตุ</label>
-            <input type="text" id="enroll-note" placeholder="เช่น ชำระเงินแล้ว">
-        </div>
         <p id="enroll-msg" class="form-msg"></p>
-        <div class="modal-actions">
+        <div class="modal-actions" style="margin-top: 20px;">
             <button class="btn btn-ghost" onclick="closeEnrollModal()">ยกเลิก</button>
-            <button class="btn btn-success" id="enroll-confirm-btn" onclick="confirmEnroll()">✅ ลงทะเบียน</button>
+            <button class="btn btn-success" id="enroll-confirm-btn" onclick="confirmEnroll()">💾 บันทึก</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== FACE REGISTER MODAL ===== -->
+<div id="face-register-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-box modal-large" style="max-width: 440px;">
+        <h3 class="modal-title">📷 ลงทะเบียนใบหน้าสำหรับเครื่องนี้</h3>
+        
+        <div class="face-scan-container" style="position:relative; width:100%; aspect-ratio:4/3; background:#000; border-radius:12px; overflow:hidden; border:2px solid var(--border); margin-bottom:15px; display:flex; align-items:center; justify-content:center;">
+            <video id="register-video" style="width:100%; height:100%; object-fit:cover; transform: scaleX(-1);" autoplay muted playsinline></video>
+            <div class="face-scan-overlay" style="position:absolute; inset:0; border:2px solid var(--accent); border-radius:50%; margin:20px 60px; box-shadow:0 0 0 9999px rgba(0,0,0,0.5); pointer-events:none;"></div>
+            <div class="face-scan-laser" style="position:absolute; left:60px; right:60px; height:2px; background:var(--accent); top:20px; animation:laserMove 2s infinite ease-in-out; pointer-events:none; box-shadow: 0 0 8px var(--accent);"></div>
+        </div>
+        
+        <p id="face-register-status" style="font-size:13px; font-weight:600; text-align:center; color:var(--text-dim); margin-bottom:12px;">กำลังเริ่มต้นโมเดล AI...</p>
+        
+        <div class="field" id="face-password-field" style="display:none; margin-bottom:15px;">
+            <label style="font-size:11px; font-weight:600;">ป้อนรหัสผ่านของคุณ เพื่อยืนยันและเปิดใช้งานล็อกอินใบหน้า</label>
+            <input type="password" id="face-confirm-password" placeholder="ป้อนรหัสผ่านแอดมิน">
+        </div>
+        
+        <p id="face-register-msg" class="form-msg" style="text-align:center; margin-bottom:12px;"></p>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="window.closeFaceRegisterModal()">ยกเลิก</button>
+            <button class="btn btn-primary" id="face-capture-btn" onclick="window.captureFaceAndRegister()" disabled>📷 ลงทะเบียนใบหน้า</button>
         </div>
     </div>
 </div>
