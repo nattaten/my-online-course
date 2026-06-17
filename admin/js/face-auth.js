@@ -1,6 +1,6 @@
 // ============================================================
-// face-auth.js - AI Face Recognition Auth Module
-// Uses face-api.js (TensorFlow.js) for client-side face matching
+// face-auth.js - AI Face Recognition Auth Module with Liveness Check
+// Uses face-api.js (TensorFlow.js) for client-side face matching and blink detection
 // ============================================================
 
 (function () {
@@ -10,6 +10,9 @@
     let registerStream = null;
     let detectionInterval = null;
     let tempDescriptor = null;
+
+    // --- Liveness state tracking ---
+    let regLivenessState = null;
 
     // --- Simple local encryption / obfuscation helper ---
     function encrypt(text) {
@@ -33,6 +36,229 @@
         } catch (e) {
             return "";
         }
+    }
+
+    // --- Liveness Detection Mathematical Helpers ---
+    function getDistance(p1, p2) {
+        return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+    }
+
+    function getEyeAspectRatio(eye) {
+        const p1 = eye[0];
+        const p2 = eye[1];
+        const p3 = eye[2];
+        const p4 = eye[3];
+        const p5 = eye[4];
+        const p6 = eye[5];
+
+        const vertical1 = getDistance(p2, p6);
+        const vertical2 = getDistance(p3, p5);
+        const horizontal = getDistance(p1, p4);
+
+        return (vertical1 + vertical2) / (2.0 * horizontal);
+    }
+
+    function getMouthAspectRatio(pts) {
+        const mouthWidth = getDistance(pts[48], pts[54]);
+        const mouthHeight = getDistance(pts[62], pts[66]);
+        if (mouthWidth === 0) return 0;
+        return mouthHeight / mouthWidth;
+    }
+
+    function getHeadSymmetryRatio(pts) {
+        const nose = pts[30];
+        const jawLeft = pts[0];
+        const jawRight = pts[16];
+        const distLeft = getDistance(nose, jawLeft);
+        const distRight = getDistance(nose, jawRight);
+        if (distRight === 0) return 1.0;
+        return distLeft / distRight;
+    }
+
+    // --- Challenge Generator & Engine ---
+    function createLivenessState() {
+        const challenges = ['blink', 'mouth', 'turn_left', 'turn_right'];
+        const selectedChallenge = challenges[Math.floor(Math.random() * challenges.length)];
+        return {
+            phase: 'center_check', // 'center_check', 'challenge_active', 'success'
+            challenge: selectedChallenge,
+            step: 0,
+            consecutiveCenterFrames: 0,
+            startTime: 0,
+            blinkCount: 0,
+            blinkClosedState: false,
+            blinkClosedFrames: 0,
+            blinkOpenFrames: 0,
+            lostFrames: 0,
+            statusText: 'กรุณามองตรงมาที่กล้อง เพื่อเริ่มต้นสแกน'
+        };
+    }
+
+    function getChallengePrompt(challenge) {
+        switch (challenge) {
+            case 'blink':
+                return '👉 กรุณา "กระพริบตา 2 ครั้ง" เพื่อตรวจจับการมีชีวิต';
+            case 'mouth':
+                return '👉 กรุณา "อ้าปากกว้าง" แล้วหุบปาก เพื่อตรวจจับการมีชีวิต';
+            case 'turn_left':
+                return '👉 กรุณา "หันหน้าไปทางซ้าย" เล็กน้อยแล้วหันกลับมาตรงกลาง';
+            case 'turn_right':
+                return '👉 กรุณา "หันหน้าไปทางขวา" เล็กน้อยแล้วหันกลับมาตรงกลาง';
+            default:
+                return '👉 กรุณาขยับใบหน้าตามคำสั่ง';
+        }
+    }
+
+    function updateLivenessState(state, detection) {
+        if (!detection) {
+            state.consecutiveCenterFrames = 0;
+            state.lostFrames = (state.lostFrames || 0) + 1;
+            
+            if (state.lostFrames > 8) { // ~1.5s grace period
+                if (state.phase !== 'success') {
+                    state.phase = 'center_check';
+                    state.statusText = '❌ สูญเสียการตรวจจับใบหน้า กรุณามองกลับมาที่กล้อง';
+                }
+            } else {
+                if (state.phase !== 'success') {
+                    state.statusText = '⚠️ ไม่พบใบหน้าชั่วคราว กรุณามองตรงมาที่กล้อง';
+                }
+            }
+            return state;
+        }
+
+        state.lostFrames = 0;
+        const pts = detection.landmarks.positions;
+        const leftEye = detection.landmarks.getLeftEye();
+        const rightEye = detection.landmarks.getRightEye();
+
+        const ear = (getEyeAspectRatio(leftEye) + getEyeAspectRatio(rightEye)) / 2;
+        const mar = getMouthAspectRatio(pts);
+        const sym = getHeadSymmetryRatio(pts);
+
+        if (state.phase === 'center_check') {
+            const isCentered = (sym >= 0.75 && sym <= 1.30);
+            const isMouthClosed = (mar < 0.12);
+            const isEyesOpen = (ear >= 0.25);
+
+            if (isCentered && isMouthClosed && isEyesOpen) {
+                state.consecutiveCenterFrames++;
+                state.statusText = `⏳ กำลังตั้งค่าตำแหน่งใบหน้า... (${state.consecutiveCenterFrames}/5)`;
+                if (state.consecutiveCenterFrames >= 5) {
+                    state.phase = 'challenge_active';
+                    state.startTime = Date.now();
+                    state.step = 0;
+                    state.blinkCount = 0;
+                    state.blinkClosedState = false;
+                    state.blinkClosedFrames = 0;
+                    state.blinkOpenFrames = 0;
+                    state.statusText = getChallengePrompt(state.challenge);
+                }
+            } else {
+                state.consecutiveCenterFrames = 0;
+                let tip = 'กรุณามองตรงมาที่กล้อง';
+                if (!isCentered) tip = 'กรุณาขยับหน้าให้อยู่ตรงกลางกรอบ';
+                else if (!isEyesOpen) tip = 'กรุณาลืมตาขึ้น';
+                else if (!isMouthClosed) tip = 'กรุณาหุบปากเพื่อเตรียมสแกน';
+                state.statusText = `👁️ ${tip}`;
+            }
+        } 
+        else if (state.phase === 'challenge_active') {
+            const elapsed = Date.now() - state.startTime;
+            if (elapsed > 7000) {
+                const challenges = ['blink', 'mouth', 'turn_left', 'turn_right'];
+                state.challenge = challenges[Math.floor(Math.random() * challenges.length)];
+                state.phase = 'center_check';
+                state.consecutiveCenterFrames = 0;
+                state.statusText = '⌛ หมดเวลาสแกน ขยับใบหน้าเริ่มใหม่อีกครั้ง...';
+                return state;
+            }
+
+            const remaining = Math.max(0, Math.ceil((7000 - elapsed) / 1000));
+            const timerSuffix = ` (เหลือเวลา ${remaining} วินาที)`;
+
+            if (state.challenge === 'blink') {
+                if (!state.blinkClosedState) {
+                    if (ear <= 0.18) {
+                        state.blinkClosedFrames++;
+                        if (state.blinkClosedFrames >= 2) {
+                            state.blinkClosedState = true;
+                            state.blinkOpenFrames = 0;
+                            state.statusText = `👁️ ตรวจพบหลับตาแล้ว! ลืมตาขึ้น...${timerSuffix}`;
+                        }
+                    } else {
+                        state.blinkClosedFrames = 0;
+                        state.statusText = `👉 กรุณา "กระพริบตา 2 ครั้ง" (ครั้งที่ ${state.blinkCount + 1})${timerSuffix}`;
+                    }
+                } else {
+                    if (ear >= 0.24) {
+                        state.blinkOpenFrames++;
+                        if (state.blinkOpenFrames >= 2) {
+                            state.blinkCount++;
+                            state.blinkClosedState = false;
+                            state.blinkClosedFrames = 0;
+                            state.blinkOpenFrames = 0;
+                            
+                            if (state.blinkCount >= 2) {
+                                state.phase = 'success';
+                                state.statusText = '✨ ยืนยันใบหน้ามีชีวิตสำเร็จ!';
+                            } else {
+                                state.statusText = `👁️ กระพริบตาครั้งที่ 1 สำเร็จ! กระพริบตาอีกครั้ง...${timerSuffix}`;
+                            }
+                        }
+                    } else {
+                        state.blinkOpenFrames = 0;
+                    }
+                }
+            } 
+            else if (state.challenge === 'mouth') {
+                if (state.step === 0) {
+                    if (mar >= 0.28) {
+                        state.step = 1;
+                        state.statusText = `😮 อ้าปากสำเร็จ! หุบปากเพื่อยืนยัน${timerSuffix}`;
+                    } else {
+                        state.statusText = `👉 กรุณา "อ้าปากกว้าง" แล้วหุบปาก${timerSuffix}`;
+                    }
+                } else if (state.step === 1) {
+                    if (mar < 0.12) {
+                        state.phase = 'success';
+                        state.statusText = '✨ ยืนยันใบหน้ามีชีวิตสำเร็จ!';
+                    }
+                }
+            } 
+            else if (state.challenge === 'turn_left') {
+                if (state.step === 0) {
+                    if (sym <= 0.52) {
+                        state.step = 1;
+                        state.statusText = `👈 หันซ้ายสำเร็จ! หันหน้ากลับมาตรงกลาง${timerSuffix}`;
+                    } else {
+                        state.statusText = `👉 กรุณา "หันหน้าไปทางซ้าย" เล็กน้อย${timerSuffix}`;
+                    }
+                } else if (state.step === 1) {
+                    if (sym >= 0.75 && sym <= 1.30) {
+                        state.phase = 'success';
+                        state.statusText = '✨ ยืนยันใบหน้ามีชีวิตสำเร็จ!';
+                    }
+                }
+            } 
+            else if (state.challenge === 'turn_right') {
+                if (state.step === 0) {
+                    if (sym >= 1.85) {
+                        state.step = 1;
+                        state.statusText = `👉 หันขวาสำเร็จ! หันหน้ากลับมาตรงกลาง${timerSuffix}`;
+                    } else {
+                        state.statusText = `👉 กรุณา "หันหน้าไปทางขวา" เล็กน้อย${timerSuffix}`;
+                    }
+                } else if (state.step === 1) {
+                    if (sym >= 0.75 && sym <= 1.30) {
+                        state.phase = 'success';
+                        state.statusText = '✨ ยืนยันใบหน้ามีชีวิตสำเร็จ!';
+                    }
+                }
+            }
+        }
+
+        return state;
     }
 
     // --- Load Models from CDN ---
@@ -67,6 +293,9 @@
             captureBtn.textContent = '📷 รอตรวจจับใบหน้า...';
         }
         if (modal) modal.style.display = 'flex';
+
+        // Reset liveness challenge state
+        regLivenessState = createLivenessState();
 
         try {
             if (statusEl) statusEl.textContent = 'กำลังโหลดโมเดล AI...';
@@ -108,9 +337,10 @@
         const video = document.getElementById('register-video');
         if (video) video.srcObject = null;
         tempDescriptor = null;
+        regLivenessState = null;
     };
 
-    // --- Loop to detect face inside the frame ---
+    // --- Loop to detect face and check for registration challenges ---
     function startFaceDetectionLoop(video, statusEl, captureBtn, passwordField) {
         if (detectionInterval) clearInterval(detectionInterval);
         
@@ -122,22 +352,26 @@
                 .withFaceDescriptor();
 
             if (detection) {
-                tempDescriptor = detection.descriptor;
-                if (statusEl) statusEl.textContent = 'ตรวจพบใบหน้าแล้ว! กรุณากรอกรหัสผ่านเพื่อบันทึก';
-                if (passwordField) passwordField.style.display = 'block';
-                if (captureBtn) {
-                    captureBtn.disabled = false;
-                    captureBtn.textContent = '📷 บันทึกใบหน้า';
+                if (regLivenessState.phase !== 'success') {
+                    regLivenessState = updateLivenessState(regLivenessState, detection);
+                    if (statusEl) statusEl.textContent = regLivenessState.statusText;
+
+                    if (regLivenessState.phase === 'success') {
+                        tempDescriptor = detection.descriptor;
+                        if (passwordField) passwordField.style.display = 'block';
+                        if (captureBtn) {
+                            captureBtn.disabled = false;
+                            captureBtn.textContent = '📷 บันทึกใบหน้า';
+                        }
+                    }
                 }
             } else {
-                tempDescriptor = null;
-                if (statusEl) statusEl.textContent = 'กรุณามองตรงมาที่กล้อง และอยู่ในกรอบสแกน';
-                if (captureBtn) {
-                    captureBtn.disabled = true;
-                    captureBtn.textContent = '📷 รอตรวจจับใบหน้า...';
+                if (regLivenessState.phase !== 'success') {
+                    regLivenessState = updateLivenessState(regLivenessState, null);
+                    if (statusEl) statusEl.textContent = regLivenessState.statusText;
                 }
             }
-        }, 800);
+        }, 180); // 180ms frequency for smooth liveness tracking
     }
 
     // --- Capture & Save Face Profile ---
@@ -147,8 +381,8 @@
         const captureBtn = document.getElementById('face-capture-btn');
         const password = passInput?.value || '';
 
-        if (!tempDescriptor) {
-            showMsg(msgEl, 'ไม่พบตำแหน่งใบหน้าในขณะนี้ กรุณามองตรงมาที่กล้อง', 'error');
+        if (!regLivenessState || regLivenessState.phase !== 'success' || !tempDescriptor) {
+            showMsg(msgEl, 'กรุณาสแกนใบหน้าและทำภารกิจเพื่อยืนยันตัวตนก่อนบันทึก', 'error');
             return;
         }
         if (!password) {
@@ -206,9 +440,12 @@
     let loginStream = null;
     let loginDetectionInterval = null;
 
+    // Liveness states for login
+    let matchedProfile = null;
+    let loginLivenessState = null;
+
     window.toggleFaceLogin = async function (btn) {
         const webcamArea = document.getElementById('login-webcam-area');
-        const loginForm = document.getElementById('admin-login-form');
         const errEl = document.getElementById('admin-login-error');
 
         if (!webcamArea) return;
@@ -240,6 +477,10 @@
         const video = document.getElementById('login-video');
         const statusText = document.getElementById('login-scan-status');
 
+        // Reset login states
+        matchedProfile = null;
+        loginLivenessState = null;
+
         try {
             if (statusText) statusText.textContent = 'กำลังโหลดโมเดล AI...';
             await loadModels();
@@ -270,61 +511,86 @@
         loginDetectionInterval = setInterval(async () => {
             if (!video || video.paused || video.ended) return;
 
-            if (statusText) statusText.textContent = 'กำลังค้นหาใบหน้า...';
-
             const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.65 }))
                 .withFaceLandmarks()
                 .withFaceDescriptor();
 
             if (detection) {
-                if (statusText) statusText.textContent = 'กำลังสแกนวิเคราะห์...';
-                
                 const scannedDescriptor = detection.descriptor;
-                let bestMatch = null;
-                let minDistance = 99.0;
 
-                profiles.forEach(profile => {
-                    const savedDescriptor = new Float32Array(profile.descriptor);
-                    const distance = faceapi.euclideanDistance(scannedDescriptor, savedDescriptor);
-                    if (distance < minDistance) {
-                        minDistance = distance;
-                        bestMatch = profile;
-                    }
-                });
+                // STAGE 1: Face matching (find who it matches)
+                if (!matchedProfile) {
+                    if (statusText) statusText.textContent = 'กำลังค้นหาใบหน้า...';
+                    
+                    let bestMatch = null;
+                    let minDistance = 99.0;
 
-                // Match Threshold is typically 0.55 for security and accuracy
-                if (bestMatch && minDistance < 0.55) {
-                    if (statusText) statusText.textContent = '✅ ตรวจพบใบหน้าตรงกัน!';
-                    clearInterval(loginDetectionInterval);
-                    loginDetectionInterval = null;
+                    profiles.forEach(profile => {
+                        const savedDescriptor = new Float32Array(profile.descriptor);
+                        const distance = faceapi.euclideanDistance(scannedDescriptor, savedDescriptor);
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            bestMatch = profile;
+                        }
+                    });
 
-                    const password = decrypt(bestMatch.encryptedPass);
-                    if (password) {
-                        // Populate login inputs
-                        const emailInput = document.getElementById('admin-login-email');
-                        const passInput = document.getElementById('admin-login-password');
-                        if (emailInput) emailInput.value = bestMatch.email;
-                        if (passInput) passInput.value = password;
-
-                        // Auto submit form
-                        setTimeout(() => {
-                            stopLoginScan();
-                            const form = document.getElementById('admin-login-form');
-                            if (form) {
-                                const event = new Event('submit', { cancelable: true });
-                                form.dispatchEvent(event);
-                            }
-                        }, 500);
+                    if (bestMatch && minDistance < 0.55) {
+                        matchedProfile = bestMatch;
+                        loginLivenessState = createLivenessState();
+                        if (statusText) statusText.textContent = loginLivenessState.statusText;
                     } else {
-                        if (statusText) statusText.textContent = '❌ รหัสผ่านเสียหาย กรุณาล็อกอินใหม่';
+                        if (statusText) statusText.textContent = '❌ ใบหน้าไม่ตรงกับข้อมูลในระบบ';
                     }
-                } else {
-                    if (statusText) statusText.textContent = '❌ ใบหน้าไม่ตรงกับข้อมูลในระบบ';
+                } 
+                // STAGE 2: Liveness verification (requires challenge completion)
+                else {
+                    const savedDescriptor = new Float32Array(matchedProfile.descriptor);
+                    const distance = faceapi.euclideanDistance(scannedDescriptor, savedDescriptor);
+                    if (distance > 0.60) { // Slightly higher threshold to allow minor variations while performing challenges
+                        matchedProfile = null;
+                        loginLivenessState = null;
+                        if (statusText) statusText.textContent = '❌ หลุดตำแหน่งใบหน้า เริ่มสแกนใหม่...';
+                        return;
+                    }
+
+                    loginLivenessState = updateLivenessState(loginLivenessState, detection);
+                    if (statusText) statusText.textContent = loginLivenessState.statusText;
+
+                    if (loginLivenessState.phase === 'success') {
+                        clearInterval(loginDetectionInterval);
+                        loginDetectionInterval = null;
+
+                        const password = decrypt(matchedProfile.encryptedPass);
+                        if (password) {
+                            const emailInput = document.getElementById('admin-login-email');
+                            const passInput = document.getElementById('admin-login-password');
+                            if (emailInput) emailInput.value = matchedProfile.email;
+                            if (passInput) passInput.value = password;
+
+                            setTimeout(() => {
+                                stopLoginScan();
+                                const form = document.getElementById('admin-login-form');
+                                if (form) {
+                                    const event = new Event('submit', { cancelable: true });
+                                    form.dispatchEvent(event);
+                                }
+                            }, 500);
+                        } else {
+                            if (statusText) statusText.textContent = '❌ รหัสผ่านเสียหาย กรุณาล็อกอินใหม่';
+                            matchedProfile = null;
+                            loginLivenessState = null;
+                        }
+                    }
                 }
             } else {
-                if (statusText) statusText.textContent = '❌ ไม่พบใบหน้า กรุณามองตรงมาที่กล้อง';
+                if (matchedProfile) {
+                    loginLivenessState = updateLivenessState(loginLivenessState, null);
+                    if (statusText) statusText.textContent = loginLivenessState.statusText;
+                } else {
+                    if (statusText) statusText.textContent = '❌ ไม่พบใบหน้า กรุณามองตรงมาที่กล้อง';
+                }
             }
-        }, 850);
+        }, 180); // 180ms loop
     }
 
     function stopLoginScan() {
@@ -341,6 +607,9 @@
 
         const webcamArea = document.getElementById('login-webcam-area');
         if (webcamArea) webcamArea.style.display = 'none';
+
+        matchedProfile = null;
+        loginLivenessState = null;
     }
 
     window.stopFaceLoginScan = stopLoginScan;
