@@ -1,8 +1,8 @@
-// ============================================================
+﻿// ============================================================
 // finance.js - Weekly + monthly finance dashboard
 // Rules:
 //   vd_* = enrollments created in the period * course price, using enrollments.enrolled_at
-//   ol_* = lessons created in the period * course price, using lessons.created_at
+//   ol_* = lessons created in the period * course price, using lessons.created_at (1 lesson = 1 course price)
 // ============================================================
 
 const FINANCE_WEEK_COUNT = 8;
@@ -64,18 +64,20 @@ async function loadFinance() {
                     ${months.map((period, index) => renderTimelineItem(period, index)).join('')}
                 </div>
             </div>
-        `;    } catch (error) {
+        `;
+    } catch (error) {
         wrap.innerHTML = `<div class="error-state">โหลด Finance ไม่สำเร็จ: ${escHtml(error.message)}</div>`;
     }
 }
 
 function buildFinanceModel(courses, enrollments, lessons) {
     const courseMap = new Map(courses.map(course => [course.course_code, course]));
+    
     const vdEnrollments = enrollments
         .map(enrollment => ({ enrollment, course: courseMap.get(enrollment.course_code) }))
         .filter(item => item.course?.course_code?.startsWith('vd_') && item.enrollment.enrolled_at);
 
-    // Only count live lessons that have a solution sheet (pdf_url is not null and not empty)
+    // กรองเฉพาะบทเรียนสอนสดที่มีการแนบเอกสารเฉลย (pdf_url ไม่ว่าง)
     const olLessons = lessons
         .map(lesson => ({ lesson, course: courseMap.get(lesson.course_code) }))
         .filter(item => {
@@ -91,27 +93,15 @@ function buildPeriodSummary(period, model, isCurrent) {
     const olGroups = new Map();
     const vdGroups = new Map();
 
+    // คิดรายได้สอนสด: เช็กวันแนบเอกสารเฉลย ถ้าตรงช่วงเวลา นับเป็น 1 ครั้ง = ราคาคอร์สทันที
     model.olLessons.forEach(({ lesson, course }) => {
         const date = lesson.created_at ? new Date(lesson.created_at) : new Date();
         if (date < period.start || date > period.end) return;
 
-        // Calculate the number of active students enrolled in this course at the time of the lesson
-        const activeCount = model.enrollments.filter(e => {
-            if (e.course_code !== course.course_code) return false;
-            
-            const enrollDate = e.enrolled_at ? new Date(e.enrolled_at) : null;
-            if (!enrollDate || enrollDate > date) return false;
-            
-            if (e.expires_at) {
-                const expireDate = new Date(e.expires_at);
-                if (expireDate < date) return false;
-            }
-            return true;
-        }).length;
-
-        addFinanceGroupRow(olGroups, course, 'ol', 'ครั้งที่สอน', activeCount);
+        addFinanceGroupRow(olGroups, course, 'ol', 'ครั้งที่สอน');
     });
 
+    // คิดรายได้วิดีโอ: เช็กวันสมัครเรียนใหม่
     model.vdEnrollments.forEach(({ enrollment, course }) => {
         const date = new Date(enrollment.enrolled_at);
         if (date < period.start || date > period.end) return;
@@ -136,28 +126,20 @@ function buildPeriodSummary(period, model, isCurrent) {
     };
 }
 
-function addFinanceGroupRow(groups, course, kind, countLabel, activeCount = 1) {
+function addFinanceGroupRow(groups, course, kind, countLabel) {
     const current = groups.get(course.course_code) || {
         kind,
         code: course.course_code,
         name: course.name || course.course_code,
         count: 0,
-        activeStudentTotal: 0,
         price: Number(course.price || 0),
         amount: 0,
         detail: '',
     };
 
-    if (kind === 'ol') {
-        current.count += 1; // Number of lessons taught
-        current.activeStudentTotal += activeCount; // Sum of active students
-        current.amount += activeCount * current.price;
-        current.detail = `${current.count.toLocaleString('th-TH')} ${countLabel} (นักเรียนรวม ${current.activeStudentTotal.toLocaleString('th-TH')} คน) × ${formatBaht(current.price)}`;
-    } else {
-        current.count += 1; // Number of registrations
-        current.amount = current.count * current.price;
-        current.detail = `${current.count.toLocaleString('th-TH')} ${countLabel} × ${formatBaht(current.price)}`;
-    }
+    current.count += 1; // เพิ่มจำนวนครั้งที่สอน หรือจำนวนคนสมัคร
+    current.amount = current.count * current.price; // สูตรตรงตัว: จำนวน x ราคาคอร์ส
+    current.detail = `${current.count.toLocaleString('th-TH')} ${countLabel} × ${formatBaht(current.price)}`;
 
     groups.set(course.course_code, current);
 }
@@ -193,25 +175,6 @@ function renderMetric(label, value, meta) {
             <strong>${value}</strong>
             <small>${meta}</small>
         </div>`;
-}
-
-function renderPeriodCard(period) {
-    const empty = !period.rows.length;
-    return `
-        <article class="finance-period-card ${period.isCurrent ? 'is-current' : ''} ${empty ? 'is-empty' : ''}">
-            <header class="finance-period-header">
-                <div>
-                    <span class="finance-period-label">${period.isCurrent ? 'ปัจจุบัน' : period.typeLabel}</span>
-                    <h4>${period.label}</h4>
-                </div>
-                <strong>${formatBaht(period.total)}</strong>
-            </header>
-            <div class="finance-period-split">
-                <span><b class="dot dot-ol"></b> สอนสด ${formatBaht(period.olTotal)}</span>
-                <span><b class="dot dot-vd"></b> วิดีโอ ${formatBaht(period.vdTotal)}</span>
-            </div>
-            ${empty ? '<div class="finance-empty-inline">ยังไม่มีรายการในช่วงนี้</div>' : renderPeriodRows(period.rows)}
-        </article>`;
 }
 
 function renderTimelineItem(period, index) {
@@ -296,23 +259,6 @@ function renderDetailGroup(label, rows) {
                     </div>
                 </div>`).join('')}
         </section>`;
-}
-function renderPeriodRows(rows) {
-    return `
-        <div class="finance-row-list">
-            ${rows.map(row => `
-                <div class="finance-row-card">
-                    <div class="finance-row-left">
-                        <span class="badge ${row.kind === 'ol' ? 'badge-orange' : 'badge-blue'}">${row.kind === 'ol' ? 'สอนสด' : 'วิดีโอ'}</span>
-                        <div>
-                            <strong>${escHtml(row.name)}</strong>
-                            <span class="mono-text">${escHtml(row.code)}</span>
-                            <small>${escHtml(row.detail)}</small>
-                        </div>
-                    </div>
-                    <strong class="finance-row-price">${formatBaht(row.amount)}</strong>
-                </div>`).join('')}
-        </div>`;
 }
 
 function buildWeekPeriods(count) {
