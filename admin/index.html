@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="th">
 <head>
     <meta charset="UTF-8">
@@ -189,6 +189,18 @@
                         <label>ลำดับ (order_no)</label>
                         <input type="number" id="lesson-order" value="1" min="1">
                     </div>
+                    <!-- [NEW] Bill toggle — shown only for ol_* courses (controlled by lessons.js) -->
+                    <div class="field" id="add-lesson-bill-row" style="display:none;">
+                        <label>การคิดเงิน (สอนสดเท่านั้น)</label>
+                        <label class="bill-toggle-label">
+                            <input type="checkbox" id="add-lesson-bill-checkbox" class="bill-toggle-input">
+                            <span class="bill-toggle-track">
+                                <span class="bill-toggle-thumb"></span>
+                            </span>
+                            <span class="bill-toggle-text" id="add-lesson-bill-text">ไม่คิดเงิน</span>
+                        </label>
+                        <p class="field-hint">เปิด = บันทึกเวลานี้เป็นวันที่คิดเงิน · ปิด = ไม่นับในรายได้</p>
+                    </div>
                     <button class="btn btn-primary" onclick="addLesson()">💾 บันทึกบทเรียน</button>
                     <p id="lesson-msg" class="form-msg"></p>
                 </div>
@@ -365,6 +377,18 @@
             <label>ลำดับ</label>
             <input type="number" id="edit-lesson-order" min="1">
         </div>
+        <!-- [NEW] Bill toggle — shown only for ol_* courses (controlled by lessons.js) -->
+        <div class="field" id="edit-lesson-bill-row" style="display:none;">
+            <label>การคิดเงิน (สอนสดเท่านั้น)</label>
+            <label class="bill-toggle-label">
+                <input type="checkbox" id="edit-lesson-bill-checkbox" class="bill-toggle-input">
+                <span class="bill-toggle-track">
+                    <span class="bill-toggle-thumb"></span>
+                </span>
+                <span class="bill-toggle-text" id="edit-lesson-bill-text">ไม่คิดเงิน</span>
+            </label>
+            <p class="field-hint">เปิด = ตั้งวันที่คิดเงิน (ครั้งแรก) หรือคงวันเดิม · ปิด = ล้างวันที่ออก (ไม่นับในรายได้)</p>
+        </div>
         <p id="edit-lesson-msg" class="form-msg"></p>
         <div class="modal-actions">
             <button class="btn btn-ghost" onclick="closeEditLessonModal()">ยกเลิก</button>
@@ -504,8 +528,30 @@ window.addEventListener('admin:ready', async () => {
         }
     });
 
+    // [NEW] Bill toggle label sync
+    syncBillLabel('add-lesson-bill-checkbox',  'add-lesson-bill-text');
+    syncBillLabel('edit-lesson-bill-checkbox', 'edit-lesson-bill-text');
+
+    // Re-sync edit modal toggle label whenever the modal opens
+    const editLessonModal = document.getElementById('edit-lesson-modal');
+    if (editLessonModal) {
+        new MutationObserver(() => {
+            syncBillLabel('edit-lesson-bill-checkbox', 'edit-lesson-bill-text');
+        }).observe(editLessonModal, { attributes: true, attributeFilter: ['style'] });
+    }
+
     await initDashboard();
 });
+
+// [NEW] Keeps the "คิดเงิน / ไม่คิดเงิน" text next to the toggle in sync
+function syncBillLabel(checkboxId, labelId) {
+    const cb  = document.getElementById(checkboxId);
+    const lbl = document.getElementById(labelId);
+    if (!cb || !lbl) return;
+    lbl.textContent = cb.checked ? 'คิดเงิน ✅' : 'ไม่คิดเงิน';
+    // Remove any previous listener before adding to avoid duplicates
+    cb.onchange = () => { lbl.textContent = cb.checked ? 'คิดเงิน ✅' : 'ไม่คิดเงิน'; };
+}
 
 async function initDashboard() {
     await Promise.all([

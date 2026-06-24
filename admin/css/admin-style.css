@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+﻿@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
 :root {
     --bg:         #f2faf9; /* Soft fresh Tiffany-tinted off-white */
@@ -1743,4 +1743,115 @@ textarea,
     background: var(--accent-g);
     border-color: var(--accent-d);
     color: var(--accent-d);
+}
+
+
+/* ============================================================
+   Append these rules to admin-style.css
+   Bill toggle — list item quick-button + form toggle switch
+   ============================================================ */
+
+/* ── Quick-toggle button in the lesson list ── */
+.bill-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1.5px solid transparent;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    vertical-align: middle;
+    margin-left: 6px;
+    white-space: nowrap;
+}
+
+.bill-toggle-btn.is-billed {
+    background: color-mix(in srgb, var(--success, #22c55e) 12%, transparent);
+    color: var(--success, #22c55e);
+    border-color: color-mix(in srgb, var(--success, #22c55e) 40%, transparent);
+}
+
+.bill-toggle-btn.is-unbilled {
+    background: color-mix(in srgb, var(--text-dim, #888) 10%, transparent);
+    color: var(--text-dim, #888);
+    border-color: color-mix(in srgb, var(--text-dim, #888) 30%, transparent);
+}
+
+.bill-toggle-btn:hover.is-billed {
+    background: color-mix(in srgb, var(--success, #22c55e) 22%, transparent);
+}
+
+.bill-toggle-btn:hover.is-unbilled {
+    background: color-mix(in srgb, var(--accent, #6366f1) 12%, transparent);
+    color: var(--accent, #6366f1);
+    border-color: color-mix(in srgb, var(--accent, #6366f1) 35%, transparent);
+}
+
+/* ── Toggle switch in the Add / Edit forms ── */
+.bill-toggle-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.bill-toggle-input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+}
+
+.bill-toggle-track {
+    position: relative;
+    width: 42px;
+    height: 24px;
+    background: var(--border, #d1d5db);
+    border-radius: 12px;
+    transition: background 0.2s;
+    flex-shrink: 0;
+}
+
+.bill-toggle-input:checked + .bill-toggle-track {
+    background: var(--success, #22c55e);
+}
+
+.bill-toggle-thumb {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 18px;
+    height: 18px;
+    background: #fff;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+    transition: transform 0.2s;
+}
+
+.bill-toggle-input:checked + .bill-toggle-track .bill-toggle-thumb {
+    transform: translateX(18px);
+}
+
+.bill-toggle-text {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-dim, #888);
+    min-width: 80px;
+}
+
+.bill-toggle-input:checked ~ .bill-toggle-text {
+    color: var(--success, #22c55e);
+}
+
+/* ── Small helper hint below the toggle ── */
+.field-hint {
+    font-size: 11px;
+    color: var(--text-dim, #888);
+    margin-top: 4px;
+    line-height: 1.5;
 }

@@ -3,8 +3,12 @@
 //
 // Income sources:
 //   vd_*  = enrollments.enrolled_at × course price
-//   ol_*  = lessons.created_at (pdf_url required) × course price
+//   ol_*  = lessons.bill_at (non-null, admin-confirmed) × course price
 //   extra = extra_tutoring_fees (manual entries per week/institution)
+//
+// [CHANGED] ol_* lessons are now counted by bill_at (set manually by admin)
+// instead of created_at + pdf_url. This eliminates duplicate billing when
+// instructors attach documents multiple times around a class.
 // ============================================================
 
 const FINANCE_WEEK_COUNT  = 8;
@@ -27,7 +31,13 @@ async function loadFinance() {
         const [coursesRes, enrollmentsRes, lessonsRes, extraFeesRes] = await Promise.all([
             sb.from('courses').select('id, course_code, name, subject, schedule_day, schedule_time, price, is_active').order('id', { ascending: true }),
             sb.from('enrollments').select('id, user_id, course_code, sort_order, enrolled_at, expires_at, note').gte('enrolled_at', oldestStart.toISOString()).order('enrolled_at', { ascending: false }),
-            sb.from('lessons').select('id, course_code, lesson_title, created_at, pdf_url').gte('created_at', oldestStart.toISOString()).order('created_at', { ascending: false }),
+            // [CHANGED] Only fetch ol_* lessons where admin has confirmed billing (bill_at IS NOT NULL).
+            // We filter by bill_at range instead of created_at — no pdf_url check needed anymore.
+            sb.from('lessons')
+                .select('id, course_code, lesson_title, bill_at')
+                .not('bill_at', 'is', null)
+                .gte('bill_at', oldestStart.toISOString())
+                .order('bill_at', { ascending: false }),
             sb.from('extra_tutoring_fees').select('id, week_start, institution, amount, note, created_at').gte('week_start', toDateString(weekPeriods.at(-1).start)).order('week_start', { ascending: false }),
         ]);
 
@@ -84,12 +94,12 @@ function buildFinanceModel(courses, enrollments, lessons, extraFees) {
         .filter(({ enrollment, course }) =>
             course?.course_code?.startsWith('vd_') && enrollment.enrolled_at);
 
-    // สอนสด: นับเฉพาะบทเรียนที่แนบเอกสารเฉลยแล้ว (pdf_url ไม่ว่าง)
+    // [CHANGED] ol_* lessons: use bill_at as the billing date.
+    // pdf_url check is no longer needed — bill_at = null means "not billed" already.
     const olLessons = lessons
         .map(l => ({ lesson: l, course: courseMap.get(l.course_code) }))
         .filter(({ lesson, course }) =>
-            course?.course_code?.startsWith('ol_') &&
-            lesson.pdf_url && lesson.pdf_url.trim() !== '');
+            course?.course_code?.startsWith('ol_') && lesson.bill_at != null);
 
     return { courses, enrollments, lessons, extraFees, courseMap, vdEnrollments, olLessons };
 }
@@ -100,9 +110,9 @@ function buildPeriodSummary(period, model, isCurrent) {
     const vdGroups  = new Map();
     const extraRows = [];
 
-    // สอนสด: วันแนบเอกสารเฉลย
+    // สอนสด: วันที่คิดเงิน (bill_at) ที่ admin ตั้งด้วยตนเอง
     model.olLessons.forEach(({ lesson, course }) => {
-        const date = lesson.created_at ? new Date(lesson.created_at) : new Date();
+        const date = new Date(lesson.bill_at);   // [CHANGED] bill_at, not created_at
         if (date < period.start || date > period.end) return;
         addFinanceGroupRow(olGroups, course, 'ol', 'ครั้งที่สอน');
     });

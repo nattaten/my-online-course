@@ -1,6 +1,11 @@
 // ============================================================
 // lessons.js — จัดการบทเรียน (Filter by course + CRUD + Drag Sort)
 // ใช้ตาราง: lessons, courses
+//
+// [NEW] bill_at column:
+//   null     → ไม่คิดเงิน (excluded from finance)
+//   non-null → คิดเงิน   (timestamp admin confirmed billing)
+//   Only relevant for ol_* courses. vd_* courses are unaffected.
 // ============================================================
 
 let _currentLessons = [];
@@ -66,6 +71,8 @@ async function refreshLessonTitleOptions(courseSelectId, topicInputId, titleList
 async function handleLessonCourseChange() {
     document.getElementById('topic-name').value = '';
     document.getElementById('lesson-title').value = '';
+    // [NEW] Show/hide the bill toggle based on whether this is an ol_ course
+    updateAddFormBillToggleVisibility();
     await refreshLessonTopicOptions('lesson-course-select', 'lesson-topic-options', 'lesson-title-options');
 }
 
@@ -76,6 +83,8 @@ async function handleLessonTopicChange() {
 async function handleEditLessonCourseChange() {
     document.getElementById('edit-lesson-topic').value = '';
     document.getElementById('edit-lesson-title').value = '';
+    // [NEW] Show/hide the edit modal bill toggle
+    updateEditFormBillToggleVisibility();
     await refreshLessonTopicOptions('edit-lesson-course', 'edit-lesson-topic-options', 'edit-lesson-title-options');
 }
 
@@ -88,7 +97,34 @@ function clearLessonSuggestionCache(courseCode) {
     else _lessonSuggestionCache = new Map();
 }
 
-// ---- โหลดรายชื่อบทเรียน ----
+// ─── Bill toggle helpers ──────────────────────────────────────────────────────
+
+/** Returns true if the given course_code is a live (ol_) course */
+function isLiveCourse(courseCode) {
+    return typeof courseCode === 'string' && courseCode.startsWith('ol_');
+}
+
+/**
+ * Show/hide the "คิดเงิน" row in the Add Lesson form depending on
+ * whether the selected course is ol_*.
+ */
+function updateAddFormBillToggleVisibility() {
+    const courseCode = document.getElementById('lesson-course-select')?.value || '';
+    const row = document.getElementById('add-lesson-bill-row');
+    if (row) row.style.display = isLiveCourse(courseCode) ? '' : 'none';
+}
+
+/**
+ * Show/hide the "คิดเงิน" row in the Edit Lesson modal depending on
+ * whether the selected course is ol_*.
+ */
+function updateEditFormBillToggleVisibility() {
+    const courseCode = document.getElementById('edit-lesson-course')?.value || '';
+    const row = document.getElementById('edit-lesson-bill-row');
+    if (row) row.style.display = isLiveCourse(courseCode) ? '' : 'none';
+}
+
+// ─── Load lesson list ─────────────────────────────────────────────────────────
 async function loadLessonList() {
     const courseCode = document.getElementById('lesson-filter-course')?.value;
     const el = document.getElementById('lesson-list');
@@ -96,7 +132,8 @@ async function loadLessonList() {
 
     el.innerHTML = '<div class="loading-state">กำลังโหลด...</div>';
 
-    let query = sb.from('lessons').select('*').order('order_no', { ascending: true });
+    // [CHANGED] include bill_at in the select
+    let query = sb.from('lessons').select('*, bill_at').order('order_no', { ascending: true });
     if (courseCode) query = query.eq('course_code', courseCode);
 
     const { data, error } = await query;
@@ -109,19 +146,35 @@ async function loadLessonList() {
 
     _currentLessons = data;
 
-    el.innerHTML = data.map(l => `
+    el.innerHTML = data.map(l => {
+        const live = isLiveCourse(l.course_code);
+        const billed = live && l.bill_at != null;
+
+        // Bill badge — only shown for ol_* courses
+        const billBadge = live
+            ? `<button
+                    class="bill-toggle-btn ${billed ? 'is-billed' : 'is-unbilled'}"
+                    title="${billed ? `คิดเงินแล้ว: ${formatDateShort(l.bill_at)}\nคลิกเพื่อยกเลิก` : 'ยังไม่คิดเงิน — คลิกเพื่อตั้งคิดเงิน'}"
+                    onclick="toggleBillAt(${l.id}, ${billed ? 'true' : 'false'})">
+                    ${billed ? '✅ คิดเงิน' : '⬜ ไม่คิดเงิน'}
+               </button>`
+            : '';
+
+        return `
         <div class="list-item draggable" data-id="${l.id}" draggable="true">
             <span class="drag-handle" title="ลากเพื่อเรียงลำดับ">⣿</span>
             <div class="list-item-info">
                 <div class="list-item-name">
                     <span class="badge badge-gray mono-text">#${l.order_no}</span>
                     ${escHtml(l.lesson_title || '(ไม่มีชื่อ)')}
+                    ${billBadge}
                 </div>
                 <div class="list-item-sub">
                     ${l.topic_name ? `📌 ${escHtml(l.topic_name)} · ` : ''}
                     <span class="mono-text">${escHtml(l.course_code)}</span>
                     ${l.youtube_url ? ` · 🎬 YouTube` : ''}
                     ${l.pdf_url     ? ` · 📄 PDF` : ''}
+                    ${live && billed ? ` · 💰 ${formatDateShort(l.bill_at)}` : ''}
                 </div>
             </div>
             <div class="list-item-actions">
@@ -130,32 +183,56 @@ async function loadLessonList() {
                 <button class="icon-btn delete" title="ลบ"
                     onclick="confirmDelete('ลบบทเรียน <b>${escHtml(l.lesson_title || '')}</b>?', () => deleteLesson(${l.id}))">🗑</button>
             </div>
-        </div>`).join('');
+        </div>`;
+    }).join('');
 
     attachLessonDragListeners();
 }
 
-// ---- เพิ่มบทเรียน ----
+// ─── Toggle bill_at directly from the list ───────────────────────────────────
+
+/**
+ * Called when admin clicks the bill toggle button in the lesson list.
+ * currentlyBilled = true  → set bill_at = NULL  (ไม่คิดเงิน)
+ * currentlyBilled = false → set bill_at = NOW() (คิดเงิน)
+ */
+async function toggleBillAt(lessonId, currentlyBilled) {
+    const newValue = currentlyBilled ? null : new Date().toISOString();
+    const { error } = await sb.from('lessons').update({ bill_at: newValue }).eq('id', lessonId);
+    if (error) { alert('บันทึกไม่สำเร็จ: ' + error.message); return; }
+    clearLessonSuggestionCache();
+    await loadLessonList();
+}
+
+// ─── Add lesson ───────────────────────────────────────────────────────────────
 async function addLesson() {
-    const msg       = document.getElementById('lesson-msg');
+    const msg        = document.getElementById('lesson-msg');
     const courseCode = document.getElementById('lesson-course-select')?.value;
-    const title     = document.getElementById('lesson-title')?.value.trim();
-    const topic     = document.getElementById('topic-name')?.value.trim();
-    const ytUrl     = document.getElementById('youtube-url')?.value.trim();
-    const pdfUrl    = document.getElementById('pdf-url')?.value.trim();
-    const orderNo   = parseInt(document.getElementById('lesson-order')?.value) || 0;
+    const title      = document.getElementById('lesson-title')?.value.trim();
+    const topic      = document.getElementById('topic-name')?.value.trim();
+    const ytUrl      = document.getElementById('youtube-url')?.value.trim();
+    const pdfUrl     = document.getElementById('pdf-url')?.value.trim();
+    const orderNo    = parseInt(document.getElementById('lesson-order')?.value) || 0;
 
     if (!courseCode || !title) {
         showMsg(msg, 'กรุณาเลือกคอร์สและกรอกชื่อบทเรียน', 'error'); return;
     }
 
+    // [NEW] Read bill toggle — only for ol_* courses
+    let billAt = null;
+    if (isLiveCourse(courseCode)) {
+        const billChecked = document.getElementById('add-lesson-bill-checkbox')?.checked;
+        billAt = billChecked ? new Date().toISOString() : null;
+    }
+
     const { error } = await sb.from('lessons').insert([{
         course_code:  courseCode,
         lesson_title: title,
-        topic_name:   topic     || null,
-        youtube_url:  ytUrl     || null,
-        pdf_url:      pdfUrl    || null,
+        topic_name:   topic   || null,
+        youtube_url:  ytUrl   || null,
+        pdf_url:      pdfUrl  || null,
         order_no:     orderNo,
+        bill_at:      billAt,   // [NEW]
     }]);
 
     if (error) { showMsg(msg, 'เกิดข้อผิดพลาด: ' + error.message, 'error'); return; }
@@ -164,8 +241,10 @@ async function addLesson() {
     showMsg(msg, `✅ เพิ่มบทเรียน "${title}" สำเร็จ`, 'success');
     ['lesson-title', 'topic-name', 'youtube-url', 'pdf-url', 'lesson-order']
         .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    // Reset bill checkbox
+    const billCb = document.getElementById('add-lesson-bill-checkbox');
+    if (billCb) billCb.checked = false;
 
-    // sync filter dropdown กับคอร์สที่เพิ่ง add
     const filterEl = document.getElementById('lesson-filter-course');
     if (filterEl && !filterEl.value) filterEl.value = courseCode;
 
@@ -173,7 +252,7 @@ async function addLesson() {
     await refreshLessonTopicOptions('lesson-course-select', 'lesson-topic-options', 'lesson-title-options');
 }
 
-// ---- แก้ไขบทเรียน ----
+// ─── Edit lesson modal ────────────────────────────────────────────────────────
 async function openEditLessonModal(lesson) {
     document.getElementById('edit-lesson-id').value      = lesson.id;
     document.getElementById('edit-lesson-title').value   = lesson.lesson_title || '';
@@ -183,13 +262,24 @@ async function openEditLessonModal(lesson) {
     document.getElementById('edit-lesson-order').value   = lesson.order_no     || 0;
     document.getElementById('edit-lesson-msg').textContent = '';
 
-    // ตั้งค่า dropdown คอร์ส
+    // Course dropdown
     const sel = document.getElementById('edit-lesson-course');
     if (sel && window._allCourses?.length) {
         sel.innerHTML = window._allCourses.map(c =>
             `<option value="${c.course_code}" ${c.course_code === lesson.course_code ? 'selected' : ''}>${c.name} (${c.course_code})</option>`
         ).join('');
     }
+
+    // [NEW] Set bill toggle state
+    const billCb = document.getElementById('edit-lesson-bill-checkbox');
+    if (billCb) {
+        billCb.checked = lesson.bill_at != null;
+    }
+    // Store current bill_at so we can decide whether to preserve or overwrite
+    document.getElementById('edit-lesson-modal').dataset.currentBillAt = lesson.bill_at || '';
+
+    // Show/hide bill row based on course type
+    updateEditFormBillToggleVisibility();
 
     document.getElementById('edit-lesson-modal').style.display = 'flex';
     await refreshLessonTopicOptions('edit-lesson-course', 'edit-lesson-topic-options', 'edit-lesson-title-options');
@@ -202,28 +292,47 @@ function closeEditLessonModal() {
 }
 
 async function saveEditLesson() {
-    const msg     = document.getElementById('edit-lesson-msg');
-    const id      = document.getElementById('edit-lesson-id')?.value;
-    const title   = document.getElementById('edit-lesson-title')?.value.trim();
-    const course  = document.getElementById('edit-lesson-course')?.value;
-    const topic   = document.getElementById('edit-lesson-topic')?.value.trim();
-    const ytUrl   = document.getElementById('edit-lesson-yturl')?.value.trim();
-    const pdfUrl  = document.getElementById('edit-lesson-pdf')?.value.trim();
-    const order   = parseInt(document.getElementById('edit-lesson-order')?.value) || 0;
+    const msg    = document.getElementById('edit-lesson-msg');
+    const id     = document.getElementById('edit-lesson-id')?.value;
+    const title  = document.getElementById('edit-lesson-title')?.value.trim();
+    const course = document.getElementById('edit-lesson-course')?.value;
+    const topic  = document.getElementById('edit-lesson-topic')?.value.trim();
+    const ytUrl  = document.getElementById('edit-lesson-yturl')?.value.trim();
+    const pdfUrl = document.getElementById('edit-lesson-pdf')?.value.trim();
+    const order  = parseInt(document.getElementById('edit-lesson-order')?.value) || 0;
 
     if (!title) { showMsg(msg, 'กรุณากรอกชื่อบทเรียน', 'error'); return; }
+
+    // [NEW] Resolve bill_at
+    let billAt = undefined; // undefined = don't touch the column (non-ol_ courses)
+    if (isLiveCourse(course)) {
+        const billChecked    = document.getElementById('edit-lesson-bill-checkbox')?.checked;
+        const currentBillAt  = document.getElementById('edit-lesson-modal')?.dataset.currentBillAt || '';
+
+        if (billChecked) {
+            // Keep existing timestamp if already billed; otherwise stamp now
+            billAt = currentBillAt ? currentBillAt : new Date().toISOString();
+        } else {
+            billAt = null; // ไม่คิดเงิน
+        }
+    }
 
     const saveBtn = document.querySelector('#edit-lesson-modal .btn-success');
     if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'กำลังบันทึก...'; }
 
-    const { error } = await sb.from('lessons').update({
+    const updatePayload = {
         course_code:  course  || undefined,
         lesson_title: title,
         topic_name:   topic   || null,
         youtube_url:  ytUrl   || null,
         pdf_url:      pdfUrl  || null,
         order_no:     order,
-    }).eq('id', id);
+    };
+
+    // Only include bill_at in payload when we have a resolved value (ol_* courses)
+    if (billAt !== undefined) updatePayload.bill_at = billAt;
+
+    const { error } = await sb.from('lessons').update(updatePayload).eq('id', id);
 
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 บันทึก'; }
 
@@ -233,7 +342,7 @@ async function saveEditLesson() {
     await loadLessonList();
 }
 
-// ---- ลบบทเรียน ----
+// ─── Delete lesson ────────────────────────────────────────────────────────────
 async function deleteLesson(id) {
     const { error } = await sb.from('lessons').delete().eq('id', id);
     if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return; }
@@ -241,7 +350,7 @@ async function deleteLesson(id) {
     await loadLessonList();
 }
 
-// ---- Drag & Drop เรียงลำดับ ----
+// ─── Drag & Drop reorder ──────────────────────────────────────────────────────
 function attachLessonDragListeners() {
     const container = document.getElementById('lesson-list');
     if (!container) return;
