@@ -1,79 +1,111 @@
-// ============================================================
+// // ============================================================
 // lessons.js — จัดการบทเรียน (Filter by course + CRUD + Drag Sort)
-// ใช้ตาราง: lessons, courses
-//
-// [NEW] bill_at column:
-//   null     → ไม่คิดเงิน (excluded from finance)
-//   non-null → คิดเงิน   (timestamp admin confirmed billing)
-//   Only relevant for ol_* courses. vd_* courses are unaffected.
 // ============================================================
 
 let _currentLessons = [];
 let _dragSrcId = null;
 let _lessonSuggestionCache = new Map();
+let _isSyncingCourse = false;   // [NEW] กัน infinite loop ระหว่าง sync
 
-async function getLessonSuggestions(courseCode) {
-    if (!courseCode) return [];
-    if (_lessonSuggestionCache.has(courseCode)) return _lessonSuggestionCache.get(courseCode);
-
+// ─── [NEW] Auto order_no ─────────────────────────────────────
+async function fetchNextOrderNo(courseCode) {
+    if (!courseCode) return 1;
     const { data, error } = await sb
         .from('lessons')
-        .select('topic_name, lesson_title, course_code, order_no')
+        .select('order_no')
         .eq('course_code', courseCode)
-        .order('order_no', { ascending: true });
+        .order('order_no', { ascending: false })
+        .limit(1);
 
-    if (error) {
-        console.warn('Could not load lesson suggestions:', error.message);
-        return [];
+    if (error || !data || data.length === 0) return 1;
+    return (data[0].order_no || 0) + 1;
+}
+
+async function updateAutoOrderNo(courseCode) {
+    const orderInput = document.getElementById('lesson-order');
+    if (!orderInput) return;
+
+    if (!courseCode) {
+        orderInput.value = 1;
+        return;
     }
 
-    const rows = data || [];
-    _lessonSuggestionCache.set(courseCode, rows);
-    return rows;
+    orderInput.placeholder = '...';
+    const nextOrder = await fetchNextOrderNo(courseCode);
+    orderInput.value = nextOrder;
+    orderInput.placeholder = '';
 }
 
-function uniqueNonEmpty(values) {
-    return [...new Set(values.map(value => (value || '').trim()).filter(Boolean))];
-}
-
-function escAttr(value) {
-    return String(value ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/"/g, '&quot;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-}
-
-function renderDatalistOptions(id, values) {
-    const list = document.getElementById(id);
-    if (!list) return;
-    list.innerHTML = uniqueNonEmpty(values)
-        .map(value => `<option value="${escAttr(value)}"></option>`)
-        .join('');
-}
-
-async function refreshLessonTopicOptions(courseSelectId, topicListId, titleListId) {
-    const courseCode = document.getElementById(courseSelectId)?.value;
-    const rows = await getLessonSuggestions(courseCode);
-    renderDatalistOptions(topicListId, rows.map(row => row.topic_name));
-    renderDatalistOptions(titleListId, rows.map(row => row.lesson_title));
-}
-
-async function refreshLessonTitleOptions(courseSelectId, topicInputId, titleListId) {
-    const courseCode = document.getElementById(courseSelectId)?.value;
-    const topic = document.getElementById(topicInputId)?.value.trim();
-    const rows = await getLessonSuggestions(courseCode);
-    const hasExactTopic = topic && rows.some(row => (row.topic_name || '').trim() === topic);
-    const filteredRows = hasExactTopic ? rows.filter(row => (row.topic_name || '').trim() === topic) : rows;
-    renderDatalistOptions(titleListId, filteredRows.map(row => row.lesson_title));
-}
-
+// ─── [CHANGED] Sync ซ้าย → ขวา + auto order_no ─────────────
 async function handleLessonCourseChange() {
-    document.getElementById('topic-name').value = '';
-    document.getElementById('lesson-title').value = '';
-    // [NEW] Show/hide the bill toggle based on whether this is an ol_ course
-    updateAddFormBillToggleVisibility();
-    await refreshLessonTopicOptions('lesson-course-select', 'lesson-topic-options', 'lesson-title-options');
+    if (_isSyncingCourse) return;
+    _isSyncingCourse = true;
+
+    try {
+        const courseCode = document.getElementById('lesson-course-select')?.value || '';
+
+        // เคลียร์ฟิลด์
+        document.getElementById('topic-name').value = '';
+        document.getElementById('lesson-title').value = '';
+
+        // [NEW] อัปเดต order_no อัตโนมัติ
+        await updateAutoOrderNo(courseCode);
+
+        // Bill toggle visibility
+        updateAddFormBillToggleVisibility();
+
+        // [NEW] Sync filter dropdown (ขวา) ตามฟอร์มซ้าย
+        const filterEl = document.getElementById('lesson-filter-course');
+        if (filterEl) {
+            if (courseCode) {
+                filterEl.value = courseCode;
+                await loadLessonList();
+            } else {
+                // ถ้าเลือก "-- เลือกคอร์ส --" → filter เป็น "ทั้งหมด"
+                filterEl.value = '';
+                await loadLessonList();
+            }
+        }
+
+        // ดึง datalist suggestions
+        await refreshLessonTopicOptions('lesson-course-select', 'lesson-topic-options', 'lesson-title-options');
+    } finally {
+        _isSyncingCourse = false;
+    }
+}
+
+// ─── [NEW] Sync ขวา → ซ้าย ──────────────────────────────────
+async function handleLessonFilterChange() {
+    if (_isSyncingCourse) return;
+    _isSyncingCourse = true;
+
+    try {
+        const courseCode = document.getElementById('lesson-filter-course')?.value || '';
+
+        // Sync กลับไปฟอร์มซ้าย (เฉพาะเมื่อเลือกคอร์สจริงๆ)
+        const courseSelect = document.getElementById('lesson-course-select');
+        if (courseSelect && courseCode) {
+            courseSelect.value = courseCode;
+
+            // เคลียร์ฟิลด์ + อัปเดต order_no
+            document.getElementById('topic-name').value = '';
+            document.getElementById('lesson-title').value = '';
+            await updateAutoOrderNo(courseCode);
+            updateAddFormBillToggleVisibility();
+            await refreshLessonTopicOptions('lesson-course-select', 'lesson-topic-options', 'lesson-title-options');
+        } else if (courseSelect && !courseCode) {
+            // ถ้าเลือก "ทั้งหมด" → เคลียร์ฟอร์มซ้าย
+            courseSelect.value = '';
+            document.getElementById('topic-name').value = '';
+            document.getElementById('lesson-title').value = '';
+            document.getElementById('lesson-order').value = 1;
+            updateAddFormBillToggleVisibility();
+        }
+
+        await loadLessonList();
+    } finally {
+        _isSyncingCourse = false;
+    }
 }
 
 async function handleLessonTopicChange() {
