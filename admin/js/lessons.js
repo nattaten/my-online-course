@@ -7,16 +7,20 @@ let _dragSrcId = null;
 let _isSyncingCourse = false;   // กัน infinite loop ระหว่างการ sync ฟอร์มซ้าย-ขวา
 
 // ─── [HELPER] ดึง subject จากตาราง courses เพื่อเติมเป็นค่าเริ่มต้น ───────
-async function getCourseSubject(courseCode) {
+// ─── [HELPER] ดึง topic_name ล่าสุดของคอร์ส จากตาราง lessons ───────
+async function getLatestTopic(courseCode) {
     if (!courseCode) return '';
     const { data, error } = await sb
-        .from('courses')
-        .select('subject')
+        .from('lessons')
+        .select('topic_name')
         .eq('course_code', courseCode)
-        .single();
-    
-    if (error || !data || !data.subject) return '';
-    return data.subject;
+        .not('topic_name', 'is', null)
+        .neq('topic_name', '')
+        .order('order_no', { ascending: false })
+        .limit(1);
+
+    if (error || !data?.length) return '';
+    return data[0].topic_name || '';
 }
 
 // ─── [NEW] ดึง topic_name ที่ไม่ซ้ำกัน จากตาราง lessons ตาม course_code ───────
@@ -121,8 +125,7 @@ async function handleLessonCourseChange() {
 
         // 1. ดึง subject จากตาราง courses มาใส่เป็นค่าเริ่มต้นในช่อง topic
         if (courseCode && topicInput) {
-            const subject = await getCourseSubject(courseCode);
-            topicInput.value = subject;
+            topicInput.value = await getLatestTopic(courseCode);
         } else if (topicInput) {
             topicInput.value = '';
         }
@@ -246,7 +249,7 @@ async function loadLessonList() {
 
     el.innerHTML = '<div class="loading-state">กำลังโหลด...</div>';
 
-    let query = sb.from('lessons').select('*, bill_at').order('order_no', { ascending: true });
+    let query = sb.from('lessons').select('*, bill_at').order('order_no', { ascending: false });
     if (courseCode) query = query.eq('course_code', courseCode);
 
     const { data, error } = await query;
@@ -493,8 +496,10 @@ async function reorderLessons(srcId, tgtId) {
     const [moved] = newOrder.splice(srcIdx, 1);
     newOrder.splice(tgtIdx, 0, moved);
 
+    // รายการแสดงจากมากไปน้อย: ตัวบนสุดได้ order_no สูงสุด
+    const total = newOrder.length;
     await Promise.all(
-        newOrder.map((l, i) => sb.from('lessons').update({ order_no: i + 1 }).eq('id', l.id))
+        newOrder.map((l, i) => sb.from('lessons').update({ order_no: total - i }).eq('id', l.id))
     );
     await loadLessonList();
 }
