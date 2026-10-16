@@ -6,39 +6,70 @@ let _currentLessons = [];
 let _dragSrcId = null;
 let _isSyncingCourse = false;   // กัน infinite loop ระหว่างการ sync ฟอร์มซ้าย-ขวา
 
-// ─── [HELPER] ดึง subject จากตาราง courses เพื่อเติมเป็นค่าเริ่มต้น ───────
-// ─── [HELPER] ดึง topic_name ล่าสุดของคอร์ส จากตาราง lessons ───────
-async function getLatestTopic(courseCode) {
-    if (!courseCode) return '';
-    const { data, error } = await sb
-        .from('lessons')
-        .select('topic_name')
-        .eq('course_code', courseCode)
-        .not('topic_name', 'is', null)
-        .neq('topic_name', '')
-        .order('order_no', { ascending: false })
-        .limit(1);
+// ─── ดึง topic_name ที่เคยมีในคอร์สนั้น มาสร้าง dropdown (เรียงหัวข้อที่สร้างล่าสุดไว้บน) ───────
+// แสดงช่องเดียว: <select> เลือกหัวข้อเดิม ถ้าเลือก "พิมพ์หัวข้อใหม่" ช่องพิมพ์จึงจะโผล่
+const NEW_TOPIC_VALUE = '__new_topic__';
 
-    if (error || !data?.length) return '';
-    return data[0].topic_name || '';
-}
-
-// ─── [NEW] ดึง topic_name ที่ไม่ซ้ำกัน จากตาราง lessons ตาม course_code ───────
 async function refreshLessonTopicOptions(courseSelectId = 'lesson-course-select', datalistId = 'lesson-topic-options') {
     const courseCode = document.getElementById(courseSelectId)?.value;
-    const datalist = document.getElementById(datalistId);
-    // select id เดาจาก datalist id: lesson-topic-options -> lesson-topic-select
-    const select = document.getElementById(datalistId.replace('-options', '-select'));
 
-    const placeholder = '<option value="">— เลือกหัวข้อที่เคยมี —</option>';
+    // จับคู่ datalist -> ช่องกรอกหัวข้อ และ id ของ dropdown
+    const cfg = {
+        'lesson-topic-options':      { selectId: 'lesson-topic-select',      inputId: 'topic-name' },
+        'edit-lesson-topic-options': { selectId: 'edit-lesson-topic-select', inputId: 'edit-lesson-topic' },
+    }[datalistId];
+    if (!cfg) return;
+
+    const input = document.getElementById(cfg.inputId);
+    if (!input) return;
+
+    // ถอด datalist ของหัวข้อออกจากช่องกรอก (กัน dropdown ซ้ำ)
+    input.removeAttribute('list');
+    const oldDatalist = document.getElementById(datalistId);
+    if (oldDatalist) oldDatalist.innerHTML = '';
+
+    // ถ้ายังไม่มี <select> ให้สร้างและแทรกไว้เหนือช่องหัวข้อ
+    let select = document.getElementById(cfg.selectId);
+    if (!select) {
+        select = document.createElement('select');
+        select.id = cfg.selectId;
+        select.className = input.className;
+        select.style.width = '100%';
+
+        // ลูกศรสามเหลี่ยมทึบ (แทนลูกศรเดิมของเบราว์เซอร์)
+        const arrowSvg = "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='12' viewBox='0 0 16 12'>" +
+            "<path d='M2 2h12L8 10z' fill='%23233229' stroke='%23233229' stroke-width='2' stroke-linejoin='round'/></svg>";
+        select.style.appearance = 'none';
+        select.style.webkitAppearance = 'none';
+        select.style.backgroundImage = `url("data:image/svg+xml,${arrowSvg}")`;
+        select.style.backgroundRepeat = 'no-repeat';
+        select.style.backgroundPosition = 'right 16px center';
+        select.style.backgroundSize = '16px 12px';
+        select.style.paddingRight = '44px';
+
+        select.addEventListener('change', () => {
+            if (select.value === NEW_TOPIC_VALUE) {
+                input.value = '';
+                input.style.display = '';
+                input.placeholder = 'พิมพ์หัวข้อใหม่';
+                input.focus();
+            } else {
+                input.value = select.value;      // '' หรือหัวข้อที่เลือก
+                input.style.display = 'none';
+            }
+        });
+        input.parentNode.insertBefore(select, input);
+    }
+
+    const placeholder = '<option value="">— เลือกหัวข้อที่เคยมีในคอร์สนี้ —</option>';
 
     if (!courseCode) {
-        if (datalist) datalist.innerHTML = '';
-        if (select) select.innerHTML = placeholder;
+        select.innerHTML = placeholder;
+        input.style.display = 'none';
         return;
     }
 
-    if (select) select.innerHTML = '<option value="">กำลังโหลด...</option>';
+    select.innerHTML = '<option value="">กำลังโหลด...</option>';
 
     const { data, error } = await sb
         .from('lessons')
@@ -48,12 +79,12 @@ async function refreshLessonTopicOptions(courseSelectId = 'lesson-course-select'
         .neq('topic_name', '');
 
     if (error) {
-        if (datalist) datalist.innerHTML = '';
-        if (select) select.innerHTML = placeholder;
+        select.innerHTML = placeholder;
+        input.style.display = 'none';
         return;
     }
 
-    // รวมตามหัวข้อ เก็บ id ที่น้อยที่สุด (= ครั้งแรกที่หัวข้อนี้ถูกสร้าง)
+    // รวมตามหัวข้อ เก็บ id ที่น้อยที่สุด (ครั้งแรกที่หัวข้อนี้ถูกสร้าง)
     const firstIdMap = new Map();
     data.forEach(l => {
         const t = (l.topic_name || '').trim();
@@ -62,21 +93,33 @@ async function refreshLessonTopicOptions(courseSelectId = 'lesson-course-select'
         if (cur === undefined || l.id < cur) firstIdMap.set(t, l.id);
     });
 
-    // เรียงจาก id ครั้งแรกมากสุด -> น้อยสุด (หัวข้อใหม่ล่าสุดอยู่บน)
+    // เรียง id ครั้งแรกมากสุด -> น้อยสุด (หัวข้อใหม่ล่าสุดอยู่บน)
     const topics = [...firstIdMap.entries()]
         .sort((a, b) => b[1] - a[1])
         .map(([topic]) => topic);
 
-    if (datalist) {
-        datalist.innerHTML = topics.map(t => `<option value="${escHtml(t)}">`).join('');
-    }
-    if (select) {
-        select.innerHTML = placeholder + topics.map(t =>
-            `<option value="${escHtml(t)}">${escHtml(t)}</option>`
-        ).join('');
+    select.innerHTML =
+        placeholder +
+        topics.map(t => `<option value="${escHtml(t)}">${escHtml(t)}</option>`).join('') +
+        `<option value="${NEW_TOPIC_VALUE}">➕ พิมพ์หัวข้อใหม่</option>`;
+
+    // ตั้งสถานะเริ่มต้นตามค่าที่อยู่ในช่องกรอกตอนนี้ (เช่น ตอนเปิด modal แก้ไข)
+    const current = input.value.trim();
+    if (current && topics.includes(current)) {
+        select.value = current;
+        input.style.display = 'none';
+    } else if (current || topics.length === 0) {
+        // มีค่าที่ไม่อยู่ในรายการ หรือคอร์สนี้ยังไม่มีหัวข้อเลย -> ให้พิมพ์เอง
+        select.value = NEW_TOPIC_VALUE;
+        input.style.display = '';
+        input.placeholder = 'พิมพ์หัวข้อใหม่';
+    } else {
+        select.value = '';
+        input.style.display = 'none';
     }
 }
-// ─── [NEW] ดึง lesson_title ที่ไม่ซ้ำกัน จากตาราง lessons ตาม course_code ───────
+
+// ─── ดึง lesson_title ที่ไม่ซ้ำกัน จากตาราง lessons ตาม course_code ───────
 async function refreshLessonTitleOptions(courseSelectId = 'lesson-course-select', datalistId = 'lesson-title-options') {
     const courseCode = document.getElementById(courseSelectId)?.value;
     const datalist = document.getElementById(datalistId);
@@ -89,7 +132,6 @@ async function refreshLessonTitleOptions(courseSelectId = 'lesson-course-select'
 
     datalist.innerHTML = '<option value="กำลังโหลด..."></option>';
 
-    // ดึงจากตาราง lessons โดยเชื่อมด้วย course_code
     const { data, error } = await sb
         .from('lessons')
         .select('lesson_title')
@@ -145,12 +187,8 @@ async function handleLessonCourseChange() {
         const topicInput = document.getElementById('topic-name');
         const titleInput = document.getElementById('lesson-title');
 
-        // 1. ดึง subject จากตาราง courses มาใส่เป็นค่าเริ่มต้นในช่อง topic
-        if (courseCode && topicInput) {
-            topicInput.value = await getLatestTopic(courseCode);
-        } else if (topicInput) {
-            topicInput.value = '';
-        }
+        // 1. เคลียร์ช่องหัวข้อ (เลือกจาก dropdown หรือพิมพ์เอง)
+        if (topicInput) topicInput.value = '';
 
         // 2. เคลียร์ช่องชื่อบทเรียน
         if (titleInput) titleInput.value = '';
@@ -168,9 +206,8 @@ async function handleLessonCourseChange() {
             await loadLessonList();
         }
 
-        // 6. ดึง Suggestion (topic_name และ lesson_title) จากตาราง lessons ตาม course_code ที่เลือก
-        await refreshLessonTopicOptions('lesson-course-select', 'lesson-topic-options');
-        await refreshLessonTitleOptions('lesson-course-select', 'lesson-title-options');
+        // 6. ดึง Suggestion (topic_name และ lesson_title) ตาม course_code ที่เลือก
+        await refreshAddFormSuggestions();
 
     } finally {
         _isSyncingCourse = false;
@@ -191,29 +228,25 @@ async function handleLessonFilterChange() {
         if (courseSelect && courseCode) {
             courseSelect.value = courseCode;
 
-            // ดึง subject จากตาราง courses มาใส่เหมือนฝั่งซ้าย
-            if (topicInput) {
-                const subject = await getCourseSubject(courseCode);
-                topicInput.value = subject;
-            }
+            // เคลียร์ช่องหัวข้อ (เลือกจาก dropdown หรือพิมพ์เอง)
+            if (topicInput) topicInput.value = '';
             if (titleInput) titleInput.value = '';
 
             await updateAutoOrderNo(courseCode);
             updateAddFormBillToggleVisibility();
 
             // ดึง Suggestion จากตาราง lessons
-            await refreshLessonTopicOptions('lesson-course-select', 'lesson-topic-options');
-            await refreshLessonTitleOptions('lesson-course-select', 'lesson-title-options');
+            await refreshAddFormSuggestions();
         } else if (courseSelect && !courseCode) {
             // กรณีเลือก "ทั้งหมด"
             courseSelect.value = '';
             if (topicInput) topicInput.value = '';
             if (titleInput) titleInput.value = '';
-            document.getElementById('lesson-order').value = 1;
+            const orderEl = document.getElementById('lesson-order');
+            if (orderEl) orderEl.value = 1;
             updateAddFormBillToggleVisibility();
 
-            refreshLessonTopicOptions('lesson-course-select', 'lesson-topic-options');
-            refreshLessonTitleOptions('lesson-course-select', 'lesson-title-options');
+            refreshAddFormSuggestions();
         }
 
         await loadLessonList();
@@ -227,7 +260,7 @@ async function handleEditLessonCourseChange() {
     document.getElementById('edit-lesson-topic').value = '';
     document.getElementById('edit-lesson-title').value = '';
     updateEditFormBillToggleVisibility();
-    
+
     // ดึง Suggestion สำหรับ Modal แก้ไข
     await refreshLessonTopicOptions('edit-lesson-course', 'edit-lesson-topic-options');
     await refreshLessonTitleOptions('edit-lesson-course', 'edit-lesson-title-options');
@@ -244,6 +277,18 @@ function clearLessonSuggestionCache() {
         const el = document.getElementById(id);
         if (el) el.innerHTML = '';
     });
+
+    // รีเซ็ต dropdown หัวข้อ
+    ['lesson-topic-select', 'edit-lesson-topic-select'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = '<option value="">— เลือกหัวข้อที่เคยมีในคอร์สนี้ —</option>';
+    });
+}
+
+// โหลด dropdown/datalist ของฟอร์มเพิ่มบทเรียนใหม่ตามคอร์สที่เลือกอยู่
+async function refreshAddFormSuggestions() {
+    await refreshLessonTopicOptions('lesson-course-select', 'lesson-topic-options');
+    await refreshLessonTitleOptions('lesson-course-select', 'lesson-title-options');
 }
 
 // ─── Bill toggle helpers ──────────────────────────────────────────────────────
@@ -278,7 +323,7 @@ async function loadLessonList() {
 
     if (error) { el.innerHTML = `<div class="error-state">โหลดไม่สำเร็จ: ${error.message}</div>`; return; }
     if (!data?.length) {
-        el.innerHTML = '<div class="empty-state">ยังไม่มีบทเรียน' + (courseCode ? `ในคอร์สนี้` : '') + '</div>';
+        el.innerHTML = '<div class="empty-state">ยังไม่มีบทเรียน' + (courseCode ? ` ในคอร์สนี้` : '') + '</div>';
         return;
     }
 
@@ -333,6 +378,7 @@ async function toggleBillAt(lessonId, currentlyBilled) {
     if (error) { alert('บันทึกไม่สำเร็จ: ' + error.message); return; }
     clearLessonSuggestionCache();
     await loadLessonList();
+    await refreshAddFormSuggestions();
 }
 
 // ─── Add lesson ───────────────────────────────────────────────────────────────
@@ -369,10 +415,10 @@ async function addLesson() {
 
     clearLessonSuggestionCache();
     showMsg(msg, `✅ เพิ่มบทเรียน "${title}" สำเร็จ`, 'success');
-    
+
     ['lesson-title', 'topic-name', 'youtube-url', 'pdf-url', 'lesson-order']
         .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-    
+
     const billCb = document.getElementById('add-lesson-bill-checkbox');
     if (billCb) billCb.checked = false;
 
@@ -380,8 +426,7 @@ async function addLesson() {
     if (filterEl && !filterEl.value) filterEl.value = courseCode;
 
     await loadLessonList();
-    await refreshLessonTopicOptions('lesson-course-select', 'lesson-topic-options');
-    await refreshLessonTitleOptions('lesson-course-select', 'lesson-title-options');
+    await refreshAddFormSuggestions();
 }
 
 // ─── Edit lesson modal ────────────────────────────────────────────────────────
@@ -409,10 +454,10 @@ async function openEditLessonModal(lesson) {
 
     updateEditFormBillToggleVisibility();
     document.getElementById('edit-lesson-modal').style.display = 'flex';
-    
+
     await refreshLessonTopicOptions('edit-lesson-course', 'edit-lesson-topic-options');
     await refreshLessonTitleOptions('edit-lesson-course', 'edit-lesson-title-options');
-    
+
     setTimeout(() => document.getElementById('edit-lesson-title')?.focus(), 150);
 }
 
@@ -463,10 +508,11 @@ async function saveEditLesson() {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 บันทึก'; }
 
     if (error) { showMsg(msg, 'บันทึกไม่สำเร็จ: ' + error.message, 'error'); return; }
-    
+
     clearLessonSuggestionCache();
     closeEditLessonModal();
     await loadLessonList();
+    await refreshAddFormSuggestions();
 }
 
 // ─── Delete lesson ────────────────────────────────────────────────────────────
@@ -475,6 +521,7 @@ async function deleteLesson(id) {
     if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return; }
     clearLessonSuggestionCache();
     await loadLessonList();
+    await refreshAddFormSuggestions();
 }
 
 // ─── Drag & Drop reorder ──────────────────────────────────────────────────────
