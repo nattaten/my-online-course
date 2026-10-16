@@ -27,33 +27,55 @@ async function getLatestTopic(courseCode) {
 async function refreshLessonTopicOptions(courseSelectId = 'lesson-course-select', datalistId = 'lesson-topic-options') {
     const courseCode = document.getElementById(courseSelectId)?.value;
     const datalist = document.getElementById(datalistId);
-    if (!datalist) return;
+    // select id เดาจาก datalist id: lesson-topic-options -> lesson-topic-select
+    const select = document.getElementById(datalistId.replace('-options', '-select'));
+
+    const placeholder = '<option value="">— เลือกหัวข้อที่เคยมี —</option>';
 
     if (!courseCode) {
-        datalist.innerHTML = '';
+        if (datalist) datalist.innerHTML = '';
+        if (select) select.innerHTML = placeholder;
         return;
     }
 
-    datalist.innerHTML = '<option value="กำลังโหลด..."></option>';
+    if (select) select.innerHTML = '<option value="">กำลังโหลด...</option>';
 
-    // ดึงจากตาราง lessons โดยเชื่อมด้วย course_code
     const { data, error } = await sb
         .from('lessons')
-        .select('topic_name')
+        .select('id, topic_name')
         .eq('course_code', courseCode)
         .not('topic_name', 'is', null)
-        .order('topic_name', { ascending: true });
+        .neq('topic_name', '');
 
     if (error) {
-        datalist.innerHTML = '';
+        if (datalist) datalist.innerHTML = '';
+        if (select) select.innerHTML = placeholder;
         return;
     }
 
-    // กรองเอาค่าที่ซ้ำกันออก (Unique)
-    const uniqueTopics = [...new Set(data.map(item => item.topic_name).filter(Boolean))];
-    datalist.innerHTML = uniqueTopics.map(topic => `<option value="${escHtml(topic)}">`).join('');
-}
+    // รวมตามหัวข้อ เก็บ id ที่น้อยที่สุด (= ครั้งแรกที่หัวข้อนี้ถูกสร้าง)
+    const firstIdMap = new Map();
+    data.forEach(l => {
+        const t = (l.topic_name || '').trim();
+        if (!t) return;
+        const cur = firstIdMap.get(t);
+        if (cur === undefined || l.id < cur) firstIdMap.set(t, l.id);
+    });
 
+    // เรียงจาก id ครั้งแรกมากสุด -> น้อยสุด (หัวข้อใหม่ล่าสุดอยู่บน)
+    const topics = [...firstIdMap.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([topic]) => topic);
+
+    if (datalist) {
+        datalist.innerHTML = topics.map(t => `<option value="${escHtml(t)}">`).join('');
+    }
+    if (select) {
+        select.innerHTML = placeholder + topics.map(t =>
+            `<option value="${escHtml(t)}">${escHtml(t)}</option>`
+        ).join('');
+    }
+}
 // ─── [NEW] ดึง lesson_title ที่ไม่ซ้ำกัน จากตาราง lessons ตาม course_code ───────
 async function refreshLessonTitleOptions(courseSelectId = 'lesson-course-select', datalistId = 'lesson-title-options') {
     const courseCode = document.getElementById(courseSelectId)?.value;
